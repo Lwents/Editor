@@ -33,6 +33,7 @@ export interface EffectRendererConfig {
 }
 
 export interface EffectDefinition {
+	category?: string;
 	type: string;
 	name: string;
 	keywords: string[];

@@ -3,6 +3,7 @@ import type { EffectDefinition } from "@/effects/types";
 export const colorAdjustmentDefinition: EffectDefinition = {
 	type: "color-adjustment",
 	name: "Color adjustment",
+	category: "Color presets",
 	keywords: ["color", "brightness", "contrast", "saturation"],
 	params: [
 		{

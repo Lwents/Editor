@@ -175,9 +175,52 @@ impl EffectPipeline {
                     multiview_mask: None,
                     cache: None,
                 });
+        let stylize_shader = context
+            .device()
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("stylize-shader"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/stylize.wgsl").into()),
+            });
+        let stylize_pipeline =
+            context
+                .device()
+                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("stylize-pipeline"),
+                    layout: Some(&pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &vertex_shader_module,
+                        entry_point: Some("vertex_main"),
+                        buffers: &[wgpu::VertexBufferLayout {
+                            array_stride: std::mem::size_of::<[f32; 2]>() as u64,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &[wgpu::VertexAttribute {
+                                format: wgpu::VertexFormat::Float32x2,
+                                offset: 0,
+                                shader_location: 0,
+                            }],
+                        }],
+                        compilation_options: Default::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &stylize_shader,
+                        entry_point: Some("fragment_main"),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: context.texture_format(),
+                            blend: None,
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                        compilation_options: Default::default(),
+                    }),
+                    primitive: Default::default(),
+                    depth_stencil: None,
+                    multisample: Default::default(),
+                    multiview_mask: None,
+                    cache: None,
+                });
         let pipelines = HashMap::from([
             (GAUSSIAN_BLUR_SHADER_ID.to_string(), gaussian_blur_pipeline),
             ("color-adjustment".to_string(), color_pipeline),
+            ("stylize".to_string(), stylize_pipeline),
         ]);
 
         Self {
@@ -314,6 +357,26 @@ fn pack_effect_uniforms(
     height: u32,
 ) -> Result<EffectUniformBuffer, EffectsError> {
     let shader = pass.shader.as_str();
+    if shader == "stylize" {
+        for key in pass.uniforms.keys() {
+            if !["u_mode", "u_amount", "u_detail"].contains(&key.as_str()) {
+                return Err(EffectsError::UnsupportedUniform {
+                    shader: shader.to_string(),
+                    uniform: key.clone(),
+                });
+            }
+        }
+        return Ok(EffectUniformBuffer {
+            resolution: [width as f32, height as f32],
+            direction: [0.0, 0.0],
+            scalars: [
+                read_number_uniform(pass, "u_mode")?.clamp(0.0, 26.0),
+                read_number_uniform(pass, "u_amount")?.clamp(0.0, 1.0),
+                read_number_uniform(pass, "u_detail")?.clamp(1.0, 100.0),
+                0.0,
+            ],
+        });
+    }
     if shader == "color-adjustment" {
         for key in pass.uniforms.keys() {
             if ![
@@ -404,4 +467,35 @@ fn read_vec2_uniform(pass: &EffectPass, uniform: &str) -> Result<[f32; 2], Effec
         });
     }
     Ok([values[0], values[1]])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stylize_shader_is_valid_wgsl() {
+        let module = naga::front::wgsl::parse_str(include_str!("shaders/stylize.wgsl")).unwrap();
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .unwrap();
+    }
+
+    #[test]
+    fn stylize_uniforms_clamp_strength_and_preserve_resolution() {
+        let pass = EffectPass {
+            shader: "stylize".to_string(),
+            uniforms: HashMap::from([
+                ("u_mode".to_string(), UniformValue::Number(13.0)),
+                ("u_amount".to_string(), UniformValue::Number(1.5)),
+                ("u_detail".to_string(), UniformValue::Number(10.0)),
+            ]),
+        };
+        let packed = pack_effect_uniforms(&pass, 576, 768).unwrap();
+        assert_eq!(packed.resolution, [576.0, 768.0]);
+        assert_eq!(packed.scalars, [13.0, 1.0, 10.0, 0.0]);
+    }
 }

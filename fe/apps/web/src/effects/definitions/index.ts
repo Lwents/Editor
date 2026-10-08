@@ -3,7 +3,13 @@ import { blurEffectDefinition } from "./blur";
 
 import { colorAdjustmentDefinition } from "./color-adjustment";
 
-const defaultEffects = [blurEffectDefinition, colorAdjustmentDefinition];
+import { stylizeDefinitions } from "./stylize";
+
+const defaultEffects = [
+	blurEffectDefinition,
+	colorAdjustmentDefinition,
+	...stylizeDefinitions,
+];
 
 export function registerDefaultEffects(): void {
 	for (const definition of defaultEffects) {

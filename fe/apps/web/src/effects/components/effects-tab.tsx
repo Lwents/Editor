@@ -3,6 +3,7 @@ import { useUiLanguage } from "@/i18n/ui-language";
 
 import { useState } from "react";
 import type { ParamValues } from "@/params";
+import { buildDefaultParamValues } from "@/params/registry";
 import type { Effect } from "@/effects/types";
 import type { EffectElement, VisualElement } from "@/timeline";
 import { effectsRegistry } from "@/effects";
@@ -36,6 +37,7 @@ export function StandaloneEffectTab({
 	trackId: string;
 }) {
 	const uiTranslate = useUiLanguage();
+	const editor = useEditor();
 
 	const { renderElement, previewUpdates, commit } = useElementPreview({
 		trackId,
@@ -66,6 +68,21 @@ export function StandaloneEffectTab({
 				renderParams={(renderElement as EffectElement).params}
 				previewParam={previewParam}
 				onCommit={commit}
+				onReset={() =>
+					editor.timeline.updateElements({
+						updates: [
+							{
+								trackId,
+								elementId: element.id,
+								patch: {
+									params: buildDefaultParamValues(
+										effectsRegistry.get(element.effectType).params,
+									),
+								},
+							},
+						],
+					})
+				}
 			/>
 		</div>
 	);
@@ -184,6 +201,16 @@ export function ClipEffectsTab({
 									renderParams={getRenderParams({ effectId: effect.id })}
 									previewParam={buildPreviewParam(effect.id)}
 									onCommit={commit}
+									onReset={() =>
+										editor.timeline.updateClipEffectParams({
+											trackId,
+											elementId: element.id,
+											effectId: effect.id,
+											params: buildDefaultParamValues(
+												effectsRegistry.get(effect.type).params,
+											),
+										})
+									}
 									onToggle={() =>
 										editor.timeline.toggleClipEffect({
 											trackId,
@@ -246,6 +273,7 @@ function EffectSection({
 	onCommit,
 	onToggle,
 	onRemove,
+	onReset,
 }: {
 	effect: Effect;
 	renderParams: ParamValues;
@@ -253,8 +281,10 @@ function EffectSection({
 	onCommit: () => void;
 	onToggle?: () => void;
 	onRemove?: () => void;
+	onReset?: () => void;
 }) {
 	const definition = effectsRegistry.get(effect.type);
+	const t = useUiLanguage();
 
 	return (
 		<Section
@@ -269,7 +299,7 @@ function EffectSection({
 							<Button
 								variant={effect.enabled ? "secondary" : "ghost"}
 								size="icon"
-								aria-label={`Toggle ${definition.name}`}
+								aria-label={`${t("Toggle effect")} ${t(definition.name)}`}
 								onClick={onToggle}
 							>
 								<HugeiconsIcon
@@ -279,7 +309,7 @@ function EffectSection({
 							<Button
 								variant="ghost"
 								size="icon"
-								aria-label={`Remove ${definition.name}`}
+								aria-label={`${t("Remove effect")} ${t(definition.name)}`}
 								onClick={onRemove}
 							>
 								<HugeiconsIcon icon={Delete02Icon} />
@@ -291,16 +321,42 @@ function EffectSection({
 				<SectionTitle
 					className={cn(onToggle && !effect.enabled && "text-muted-foreground")}
 				>
-					{definition.name}
+					{t(definition.name)}
 				</SectionTitle>
 			</SectionHeader>
 			<SectionContent
 				className={cn("p-0", onToggle && !effect.enabled && "opacity-50")}
 			>
 				<SectionFields>
+					{onReset && (
+						<div className="px-4">
+							<Button size="sm" variant="outline" onClick={onReset}>
+								{t("Reset effect")}
+							</Button>
+						</div>
+					)}
 					{definition.params.map((param) => (
 						<div key={param.key} className="flex flex-col gap-3.5">
 							<div className="px-4">
+								{param.type === "number" &&
+									param.min !== undefined &&
+									param.max !== undefined && (
+										<input
+											type="range"
+											className="w-full mb-2 accent-primary"
+											aria-label={`${t(param.label)} ${t(definition.name)}`}
+											min={param.min}
+											max={param.max}
+											step={param.step ?? 1}
+											value={Number(renderParams[param.key] ?? param.default)}
+											onChange={(e) =>
+												previewParam(param.key)(Number(e.target.value))
+											}
+											onPointerUp={onCommit}
+											onKeyUp={onCommit}
+											onBlur={onCommit}
+										/>
+									)}
 								<PropertyParamField
 									param={param}
 									value={renderParams[param.key] ?? param.default}
