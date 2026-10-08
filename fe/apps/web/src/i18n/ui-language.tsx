@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
@@ -28,11 +29,38 @@ export function useUiLanguage() {
  return (text: string) => language === "vi" ? vietnamese[text] ?? text : text;
 }
 export function UiText({ text }: { text: string }) { const t = useUiLanguage(); return <>{t(text)}</>; }
+function LanguageFlag({ language }: { language: Language }) {
+ return (
+  <svg aria-hidden="true" viewBox="0 0 30 20" className="h-4 w-6 shrink-0 rounded-sm overflow-hidden">
+   {language === "vi" ? <>
+    <path fill="#da251d" d="M0 0h30v20H0z" />
+    <path fill="#ffdf00" d="m15 3 1.57 4.84h5.09l-4.12 2.99 1.57 4.84L15 12.68l-4.11 2.99 1.57-4.84-4.12-2.99h5.09z" />
+   </> : <>
+    <path fill="#012169" d="M0 0h30v20H0z" />
+    <path stroke="#fff" strokeWidth="5" d="m0 0 30 20M30 0 0 20" />
+    <path stroke="#c8102e" strokeWidth="2" d="m0 0 30 20M30 0 0 20" />
+    <path stroke="#fff" strokeWidth="7" d="M15 0v20M0 10h30" />
+    <path stroke="#c8102e" strokeWidth="4" d="M15 0v20M0 10h30" />
+   </>}
+  </svg>
+ );
+}
+
 export function LanguageSelect() {
  const { language, setLanguage } = useLanguageStore();
  useEffect(() => { void useLanguageStore.persist.rehydrate(); }, []);
  useEffect(() => { document.documentElement.lang = language; }, [language]);
- return <select aria-label="Language / Ngôn ngữ" className="bg-background rounded-md border px-2 py-1.5 text-sm" value={language} onChange={(e) => setLanguage(e.target.value === "en" ? "en" : "vi")}>
-  <option value="vi">Tiếng Việt</option><option value="en">English</option>
- </select>;
+ return (
+  <Select value={language} onValueChange={(value) => setLanguage(value === "en" ? "en" : "vi")}>
+   <SelectTrigger aria-label="Language / Ngôn ngữ" variant="outline" className="h-10 gap-2">
+    <SelectValue>
+     <span className="flex items-center gap-2"><LanguageFlag language={language} />{language === "vi" ? "Tiếng Việt" : "English"}</span>
+    </SelectValue>
+   </SelectTrigger>
+   <SelectContent>
+    <SelectItem value="vi" textValue="Tiếng Việt"><span className="flex items-center gap-2"><LanguageFlag language="vi" />Tiếng Việt</span></SelectItem>
+    <SelectItem value="en" textValue="English"><span className="flex items-center gap-2"><LanguageFlag language="en" />English</span></SelectItem>
+   </SelectContent>
+  </Select>
+ );
 }
