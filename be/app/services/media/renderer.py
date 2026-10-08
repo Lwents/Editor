@@ -1,3 +1,6 @@
+import asyncio
+import subprocess
+from functools import lru_cache
 from pathlib import Path
 
 from app.core import settings
@@ -169,7 +172,7 @@ async def render_video(
     if audio_label:
         command.extend(["-map", audio_label])
 
-    command.extend(_video_output_args())
+    command.extend(await _available_video_output_args(ffmpeg))
     command.extend(audio_args)
     command.extend(["-movflags", "+faststart", str(output_file)])
 
@@ -298,6 +301,31 @@ def _audio_output_args(request: DubbingRequest, has_narration: bool) -> list[str
         volume = round(10 ** (request.ducking_volume_db / 20), 4)
         return ["-af", f"volume={volume}", "-c:a", "aac", "-b:a", "128k"]
     return ["-c:a", "copy"]
+
+
+@lru_cache(maxsize=16)
+def _encoder_works(ffmpeg: str, modified: float, encoder: str) -> bool:
+    # Listing encoders only confirms the build includes it, not that this
+    # machine's driver can actually encode a frame.
+    try:
+        result = subprocess.run(
+            [ffmpeg, "-v", "error", "-f", "lavfi", "-i", "color=size=256x256:rate=1",
+             "-frames:v", "1", "-c:v", encoder, "-pix_fmt", "yuv420p", "-f", "null", "-"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15, check=False,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+async def _available_video_output_args(ffmpeg: str) -> list[str]:
+    encoder = settings.video_encoder.lower()
+    if encoder in {"h264_nvenc", "h264_qsv", "h264_amf"}:
+        modified = Path(ffmpeg).stat().st_mtime
+        if not await asyncio.to_thread(_encoder_works, ffmpeg, modified, encoder):
+            print(f"Encoder {encoder} không dùng được với driver hiện tại; chuyển sang libx264.")
+            return ["-c:v", "libx264", "-preset", "veryfast", "-crf", str(settings.video_crf), "-pix_fmt", "yuv420p"]
+    return _video_output_args()
 
 
 def _video_output_args() -> list[str]:

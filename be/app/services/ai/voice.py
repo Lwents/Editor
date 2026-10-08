@@ -56,7 +56,12 @@ class DisabledVoiceEngine(VoiceEngine):
 
 
 class EdgeTtsVoiceEngine(VoiceEngine):
+    def __init__(self, voice_name: str | None = None):
+        self.voice_name = voice_name
+
     def get_voice(self, gender: VoiceGender) -> str:
+        if self.voice_name:
+            return self.voice_name
         target_lang = settings.target_language.lower()
         if target_lang == "zh":
             return "zh-CN-XiaoxiaoNeural" if gender == VoiceGender.female else "zh-CN-YunxiNeural"
@@ -66,6 +71,8 @@ class EdgeTtsVoiceEngine(VoiceEngine):
             return "vi-VN-HoaiMyNeural" if gender == VoiceGender.female else "vi-VN-NamMinhNeural"
 
     def get_voice_for_text(self, text: str, gender: VoiceGender) -> str:
+        if self.voice_name:
+            return self.voice_name
         if _cjk_ratio(text) > 0.2:
             return "zh-CN-XiaoxiaoNeural" if gender == VoiceGender.female else "zh-CN-YunxiNeural"
         return self.get_voice(gender)
@@ -169,84 +176,14 @@ class EdgeTtsVoiceEngine(VoiceEngine):
         except ImportError as exc:
             raise VoiceError("Thiếu edge-tts. Chạy pip install -r requirements.txt trong backend.") from exc
 
-        # Keep one TTS request for every subtitle event that is burned into the
-        # output.  Grouping adjacent events lets Edge TTS read the text of a
-        # later subtitle before that subtitle's on-screen timecode begins.
-        events = _voice_timeline_events(parse_srt(subtitle_file), duration)
+        async def synthesize_event(text: str, destination: Path) -> None:
+            await self._save_chunk(
+                edge_tts, text, destination, self.get_voice_for_text(text, voice_gender),
+            )
 
-        if not events:
-            raise VoiceError("Không có phụ đề hợp lệ để tạo giọng đọc theo thời gian.")
-
-        ffmpeg = find_ffmpeg()
-        if not ffmpeg:
-            raise VoiceError("Không tìm thấy FFmpeg để dựng timeline giọng đọc.")
-
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-        if output_file.exists():
-            output_file.unlink()
-
-        aligned_dir = output_file.parent / "tts_aligned"
-        aligned_dir.mkdir(parents=True, exist_ok=True)
-        for old_file in aligned_dir.glob("*"):
-            old_file.unlink()
-
-        event_specs, cursor = _voice_timeline_specs(events, duration)
-        if not event_specs:
-            raise VoiceError("Không có khoảng thời gian phụ đề đủ dài để tạo giọng đọc.")
-        total = len(event_specs)
-
-        semaphore = asyncio.Semaphore(4)
-        completed_count = 0
-
-        async def render_event(spec: tuple[int, SubtitleEvent, float, float]) -> list[Path]:
-            nonlocal completed_count
-            index, event, available, gap = spec
-            async with semaphore:
-                files: list[Path] = []
-                if gap > 0.03:
-                    silence_file = aligned_dir / f"{index:04d}_silence.wav"
-                    await _create_silence(ffmpeg, gap, silence_file)
-                    files.append(silence_file)
-
-                speech_file = aligned_dir / f"{index:04d}_speech.wav"
-                if not _has_speakable_content(event.text):
-                    await _create_silence(ffmpeg, available, speech_file)
-                else:
-                    raw_file = aligned_dir / f"{index:04d}_raw.mp3"
-                    await self._save_chunk(
-                        edge_tts,
-                        event.text,
-                        raw_file,
-                        self.get_voice_for_text(event.text, voice_gender),
-                    )
-                    raw_duration = await _probe_audio_duration(raw_file)
-                    speed = max(1.0, raw_duration / available) if raw_duration > 0 else 1.0
-                    # Cap speed to keep voice intelligible; atrim in
-                    # _convert_speech will clip any leftover audio.
-                    speed = min(speed, 1.5)
-                    await _convert_speech(ffmpeg, raw_file, speech_file, speed=speed, max_duration=available)
-                files.append(speech_file)
-
-                completed_count += 1
-                if progress:
-                    percent = 70 + int((completed_count / max(total, 1)) * 8)
-                    progress(f"Tạo giọng đọc khớp phụ đề ({completed_count}/{total})", percent)
-                return files
-
-        rendered_groups = await asyncio.gather(*(render_event(spec) for spec in event_specs))
-        timeline_files = [path for group in rendered_groups for path in group]
-
-        if duration > cursor + 0.03:
-            tail_file = aligned_dir / "9999_tail.wav"
-            await _create_silence(ffmpeg, duration - cursor, tail_file)
-            timeline_files.append(tail_file)
-
-        if progress:
-            progress("Ghép timeline giọng đọc theo phụ đề", 78)
-        await _concat_wav_parts(timeline_files, output_file)
-        if not output_file.exists() or output_file.stat().st_size == 0:
-            raise VoiceError("Không tạo được timeline audio giọng đọc.")
-        return output_file
+        return await _synthesize_srt_timeline(
+            subtitle_file, output_file, duration, progress, synthesize_event,
+        )
 
     async def _save_chunk(
         self,
@@ -378,11 +315,110 @@ def _read_edge_word_timings(metadata_file: Path, part_start: float) -> list[Voic
     return result
 
 
-def get_voice_engine() -> VoiceEngine:
-    if settings.voice_engine.lower() in {"edge", "edge-tts", "edge_tts"}:
-        return EdgeTtsVoiceEngine()
+def get_voice_engine(engine: str | None = None, voice_name: str | None = None) -> VoiceEngine:
+    selected = (engine or settings.voice_engine).lower()
+    if voice_name:
+        from app.services.ai.voice_catalog import validate_voice_selection
+
+        try:
+            validate_voice_selection(selected, voice_name)
+        except ValueError as exc:
+            raise VoiceError(str(exc)) from exc
+    if selected in {"edge", "edge-tts", "edge_tts"}:
+        return EdgeTtsVoiceEngine(voice_name)
+    if selected in {"vieneu", "vieneu-tts", "vieneu_tts"}:
+        from app.services.ai.vieneu_voice import VieNeuVoiceEngine
+
+        return VieNeuVoiceEngine(voice_name)
+    if selected == "zerotts":
+        from app.services.ai.zerotts_voice import ZeroTtsVoiceEngine
+
+        return ZeroTtsVoiceEngine(voice_name)
     return DisabledVoiceEngine()
 
+
+
+async def _synthesize_srt_timeline(
+    subtitle_file: Path,
+    output_file: Path,
+    duration: float,
+    progress: Callable[[str, int], None] | None,
+    synthesize_event,
+    *,
+    concurrency: int = 4,
+    raw_suffix: str = ".mp3",
+) -> Path:
+    # Generate each speech group inside its allocated subtitle time range.
+    events = _voice_timeline_events(parse_srt(subtitle_file), duration)
+
+    if not events:
+        raise VoiceError("Không có phụ đề hợp lệ để tạo giọng đọc theo thời gian.")
+
+    ffmpeg = find_ffmpeg()
+    if not ffmpeg:
+        raise VoiceError("Không tìm thấy FFmpeg để dựng timeline giọng đọc.")
+
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    if output_file.exists():
+        output_file.unlink()
+
+    aligned_dir = output_file.parent / "tts_aligned"
+    aligned_dir.mkdir(parents=True, exist_ok=True)
+    for old_file in aligned_dir.glob("*"):
+        old_file.unlink()
+
+    event_specs, cursor = _voice_timeline_specs(events, duration)
+    if not event_specs:
+        raise VoiceError("Không có khoảng thời gian phụ đề đủ dài để tạo giọng đọc.")
+    total = len(event_specs)
+
+    semaphore = asyncio.Semaphore(concurrency)
+    completed_count = 0
+
+    async def render_event(spec: tuple[int, SubtitleEvent, float, float]) -> list[Path]:
+        nonlocal completed_count
+        index, event, available, gap = spec
+        async with semaphore:
+            files: list[Path] = []
+            if gap > 0.03:
+                silence_file = aligned_dir / f"{index:04d}_silence.wav"
+                await _create_silence(ffmpeg, gap, silence_file)
+                files.append(silence_file)
+
+            speech_file = aligned_dir / f"{index:04d}_speech.wav"
+            if not _has_speakable_content(event.text):
+                await _create_silence(ffmpeg, available, speech_file)
+            else:
+                raw_file = aligned_dir / f"{index:04d}_raw{raw_suffix}"
+                await synthesize_event(event.text, raw_file)
+                raw_duration = await _probe_audio_duration(raw_file)
+                speed = max(1.0, raw_duration / available) if raw_duration > 0 else 1.0
+                # Cap speed to keep voice intelligible; atrim in
+                # _convert_speech will clip any leftover audio.
+                speed = min(speed, 1.5)
+                await _convert_speech(ffmpeg, raw_file, speech_file, speed=speed, max_duration=available)
+            files.append(speech_file)
+
+            completed_count += 1
+            if progress:
+                percent = 70 + int((completed_count / max(total, 1)) * 8)
+                progress(f"Tạo giọng đọc khớp phụ đề ({completed_count}/{total})", percent)
+            return files
+
+    rendered_groups = await asyncio.gather(*(render_event(spec) for spec in event_specs))
+    timeline_files = [path for group in rendered_groups for path in group]
+
+    if duration > cursor + 0.03:
+        tail_file = aligned_dir / "9999_tail.wav"
+        await _create_silence(ffmpeg, duration - cursor, tail_file)
+        timeline_files.append(tail_file)
+
+    if progress:
+        progress("Ghép timeline giọng đọc theo phụ đề", 78)
+    await _concat_wav_parts(timeline_files, output_file)
+    if not output_file.exists() or output_file.stat().st_size == 0:
+        raise VoiceError("Không tạo được timeline audio giọng đọc.")
+    return output_file
 
 def _clamp_events_to_duration(
     events: list[SubtitleEvent],

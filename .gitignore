@@ -57,3 +57,6 @@ integration-logs/
 *.tmp
 *.swp
 *.swo
+
+# Optional local speech runtime
+.venv-*/

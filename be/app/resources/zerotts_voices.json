@@ -1,0 +1,42 @@
+[
+  {
+    "id": "maichi",
+    "label": "Mai Chi — nữ, trẻ, kể chuyện, nhẹ nhàng, thân thiện",
+    "gender": "female"
+  },
+  {
+    "id": "baotrang",
+    "label": "Bảo Trang — nữ, trưởng thành, tin tức, rõ ràng, trung tính",
+    "gender": "female"
+  },
+  {
+    "id": "kimoanh",
+    "label": "Kim Oanh — nữ, trung niên, kể chuyện, ấm áp, truyền cảm",
+    "gender": "female"
+  },
+  {
+    "id": "giahuy",
+    "label": "Gia Huy — nam, trẻ, kể chuyện, trầm ấm, tâm tình",
+    "gender": "male"
+  },
+  {
+    "id": "huuduc",
+    "label": "Hữu Đức — nam, lớn tuổi, kể chuyện, trầm, điềm đạm",
+    "gender": "male"
+  },
+  {
+    "id": "quangminh",
+    "label": "Quang Minh — nam, trẻ, tin tức, rõ ràng, dứt khoát",
+    "gender": "male"
+  },
+  {
+    "id": "tiendat",
+    "label": "Tiến Đạt — nam, trẻ, bình luận, sôi nổi, năng lượng cao",
+    "gender": "male"
+  },
+  {
+    "id": "hamy",
+    "label": "Hà My — nữ, trẻ, hoạt hình, cao, biểu cảm",
+    "gender": "female"
+  }
+]

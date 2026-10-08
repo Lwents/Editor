@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     ai_engine: str = "passthrough"
     translation_engine: str = "gemini"
     voice_engine: str = "disabled"
+    vieneu_api_url: str = "http://127.0.0.1:20129"
+    vieneu_voice_female: str = "Mai Anh"
+    vieneu_voice_male: str = "Hải Đăng"
+    vieneu_timeout_seconds: int = 300
+    zerotts_api_url: str = "http://127.0.0.1:20130"
+    zerotts_timeout_seconds: int = 300
     target_language: str = "vi"
     ffmpeg_path: str | None = None
     video_encoder: str = "h264_nvenc"

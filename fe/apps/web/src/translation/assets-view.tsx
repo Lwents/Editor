@@ -41,6 +41,15 @@ type Binding = {
 	name: string;
 	voice?: boolean;
 };
+type VoiceCatalog = {
+	default_engine: string;
+	engines: {
+		id: string;
+		label: string;
+		default_voice: string;
+		voices: { id: string; label: string; gender: string }[];
+	}[];
+};
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
 	const response = await fetch(`${API}${path}`, options);
 	if (!response.ok) {
@@ -65,8 +74,94 @@ export function TranslationView() {
 	const [busy, setBusy] = useState(false);
 	const [stage, setStage] = useState("");
 	const [error, setError] = useState("");
-	const [language, setLanguage] = useState("auto");
 	const [voice, setVoice] = useState(false);
+	const [keepMusic, setKeepMusic] = useState(false);
+	const [voiceCatalog, setVoiceCatalog] = useState<VoiceCatalog | null>(null);
+	const [voiceEngine, setVoiceEngine] = useState("vieneu");
+	const [voiceName, setVoiceName] = useState("");
+	const [voiceLoading, setVoiceLoading] = useState(true);
+	const [voiceError, setVoiceError] = useState("");
+	const [previewing, setPreviewing] = useState(false);
+	const [previewUrl, setPreviewUrl] = useState("");
+	const selectedVoiceEngine = voiceCatalog?.engines.find(
+		(e) => e.id === voiceEngine,
+	);
+	useEffect(() => {
+		let stopped = false;
+		api<VoiceCatalog>("/voices")
+			.then((catalog) => {
+				if (stopped) return;
+				let saved: { engine?: string; name?: string } | null = null;
+				try {
+					saved = JSON.parse(
+						localStorage.getItem("translation-voice-preference") || "null",
+					);
+				} catch {}
+				const preferred =
+					catalog.engines.find((e) => e.id === saved?.engine) ||
+					catalog.engines.find((e) => e.id === catalog.default_engine)!;
+				const name = preferred.voices.some((v) => v.id === saved?.name)
+					? saved!.name!
+					: preferred.default_voice;
+				setVoiceCatalog(catalog);
+				setVoiceEngine(preferred.id);
+				setVoiceName(name);
+			})
+			.catch((e) => {
+				if (!stopped)
+					setVoiceError(
+						e instanceof Error ? e.message : "Không tải được danh sách giọng.",
+					);
+			})
+			.finally(() => {
+				if (!stopped) setVoiceLoading(false);
+			});
+		return () => {
+			stopped = true;
+		};
+	}, []);
+	useEffect(() => {
+		if (voiceCatalog && voiceName)
+			localStorage.setItem(
+				"translation-voice-preference",
+				JSON.stringify({ engine: voiceEngine, name: voiceName }),
+			);
+	}, [voiceCatalog, voiceEngine, voiceName]);
+	useEffect(
+		() => () => {
+			if (previewUrl) URL.revokeObjectURL(previewUrl);
+		},
+		[previewUrl],
+	);
+	async function previewVoice() {
+		setPreviewing(true);
+		setVoiceError("");
+		setPreviewUrl("");
+		try {
+			const response = await fetch(`${API}/voices/preview`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ engine: voiceEngine, voice_name: voiceName }),
+			});
+			if (!response.ok) {
+				const data = await response.json().catch(() => null);
+				throw new Error(
+					typeof data?.detail === "string"
+						? data.detail
+						: "Không nghe thử được giọng này.",
+				);
+			}
+			const blob = await response.blob();
+			if (mounted.current) setPreviewUrl(URL.createObjectURL(blob));
+		} catch (e) {
+			if (mounted.current)
+				setVoiceError(
+					e instanceof Error ? e.message : "Không nghe thử được giọng này.",
+				);
+		} finally {
+			if (mounted.current) setPreviewing(false);
+		}
+	}
 	const [shortLines, setShortLines] = useState(true);
 	const [selectedMedia, setSelectedMedia] = useState("");
 	const mounted = useRef(false);
@@ -199,14 +294,17 @@ export function TranslationView() {
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify({
 					local_file_path: uploaded.local_file_path,
-					source_language: language,
+					...(voice
+						? { voice_engine: voiceEngine, voice_name: voiceName }
+						: {}),
+					source_language: "auto",
 					editor_subtitles_only: !voice,
 					editable_subtitles: true,
 					hard_subtitles: true,
 					video_speed: 1,
 					processing_mode: "balanced",
-					bgm_mode: voice ? "ducking" : "none",
-					use_demucs: false,
+					bgm_mode: voice && keepMusic ? "demucs" : "none",
+					use_demucs: voice && keepMusic,
 					logo_enabled: false,
 				}),
 			});
@@ -592,21 +690,7 @@ export function TranslationView() {
 						))}
 				</select>
 			</label>
-			<label className="block text-xs space-y-2">
-				Ngôn ngữ gốc
-				<select
-					aria-label="Ngôn ngữ gốc"
-					className="w-full bg-background rounded-md border p-2 text-sm"
-					value={language}
-					disabled={locked}
-					onChange={(e) => setLanguage(e.target.value)}
-				>
-					<option value="auto">Tự nhận diện</option>
-					<option value="en">Tiếng Anh</option>
-					<option value="zh">Tiếng Trung</option>
-					<option value="vi">Tiếng Việt</option>
-				</select>
-			</label>
+
 			<label className="flex items-start gap-2 text-xs leading-relaxed">
 				<input
 					aria-label="Sub ngắn, mỗi đoạn 1 dòng"
@@ -625,18 +709,106 @@ export function TranslationView() {
 					disabled={locked}
 					onChange={(e) => setVoice(e.target.checked)}
 				/>
-				Thêm giọng thuyết minh tiếng Việt (xử lý lâu hơn)
+				Thuyết minh tiếng Việt (thay giọng gốc)
 			</label>
+			{voice && (
+				<div className="space-y-3 rounded-md border p-3">
+					<label className="block text-xs space-y-2">
+						Dịch vụ giọng đọc
+						<select
+							aria-label="Dịch vụ giọng đọc"
+							className="w-full bg-background rounded-md border p-2 text-sm"
+							value={voiceEngine}
+							disabled={locked || voiceLoading || previewing}
+							onChange={(e) => {
+								setVoiceEngine(e.target.value);
+								setVoiceName(
+									voiceCatalog?.engines.find(
+										(engine) => engine.id === e.target.value,
+									)?.default_voice || "",
+								);
+								setVoiceError("");
+								setPreviewUrl("");
+							}}
+						>
+							{voiceCatalog?.engines.map((engine) => (
+								<option key={engine.id} value={engine.id}>
+									{engine.label}
+								</option>
+							))}
+						</select>
+					</label>
+					<label className="block text-xs space-y-2">
+						Giọng đọc
+						<select
+							aria-label="Giọng đọc"
+							className="w-full bg-background rounded-md border p-2 text-sm"
+							value={voiceName}
+							disabled={locked || voiceLoading || previewing}
+							onChange={(e) => {
+								setVoiceName(e.target.value);
+								setVoiceError("");
+								setPreviewUrl("");
+							}}
+						>
+							{selectedVoiceEngine?.voices.map((v) => (
+								<option key={v.id} value={v.id}>
+									{v.label}
+								</option>
+							))}
+						</select>
+					</label>
+					<Button
+						variant="outline"
+						className="w-full"
+						disabled={locked || voiceLoading || previewing || !voiceName}
+						onClick={() => void previewVoice()}
+					>
+						{previewing ? "Đang tạo giọng mẫu…" : "Nghe thử giọng"}
+					</Button>
+					{previewUrl && (
+						<audio
+							controls
+							autoPlay
+							src={previewUrl}
+							className="w-full"
+							aria-label="Giọng đọc mẫu"
+						/>
+					)}
+					{voiceLoading && <p className="text-xs">Đang tải danh sách giọng…</p>}
+					{voiceError && (
+						<p role="alert" className="text-xs text-destructive">
+							{voiceError}
+						</p>
+					)}
+					<label className="flex items-start gap-2 text-sm">
+						<input
+							type="checkbox"
+							className="mt-0.5"
+							checked={keepMusic}
+							disabled={locked}
+							onChange={(e) => setKeepMusic(e.target.checked)}
+						/>
+						Giữ nhạc nền, tách giọng gốc (xử lý lâu hơn)
+					</label>
+				</div>
+			)}
 			<Button
 				className="w-full"
-				disabled={locked || !selectedMedia}
+				disabled={
+					locked ||
+					!selectedMedia ||
+					(voice && (voiceLoading || !voiceName || previewing))
+				}
 				onClick={() => void startTranslation()}
 			>
 				Dịch sang tiếng Việt
 			</Button>
 			<p className="text-xs text-muted-foreground">
 				{voice
-					? "Tạo bản thuyết minh, giữ sub riêng để sửa."
+					? keepMusic
+						? "Tách giọng gốc và giữ nhạc nền. Nếu không tách được, chỉ dùng giọng tiếng Việt. Sub giữ riêng để sửa."
+						: "Chỉ dùng giọng tiếng Việt, tắt âm thanh gốc. Sub giữ riêng để sửa."
 					: "Giữ âm thanh gốc."}{" "}
 				AI dùng cấu hình 9router của backend. Mỗi lần dịch tạo một cảnh riêng để
 				bạn tiếp tục cắt và sửa video.

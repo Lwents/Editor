@@ -1,0 +1,6 @@
+# Install only in the isolated .venv-vieneu runtime (Python 3.12).
+# CUDA torch/torchaudio are installed separately by scripts/install-vieneu.ps1.
+vieneu==3.8.3
+transformers==4.57.6
+fastapi>=0.116.1
+uvicorn>=0.35.0

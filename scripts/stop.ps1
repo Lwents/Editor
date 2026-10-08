@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
-foreach ($port in @(5175, 8100)) {
+foreach ($port in @(5175, 8100, 20129, 20130)) {
     $listener = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $listener) { continue }
     $process = Get-CimInstance Win32_Process -Filter "ProcessId=$($listener.OwningProcess)"
@@ -17,7 +17,7 @@ foreach ($port in @(5175, 8100)) {
     if ($LASTEXITCODE -ne 0) { throw "Khong dung duoc tien trinh $target." }
 }
 for ($attempt=0; $attempt -lt 20; $attempt++) {
-    $remaining = Get-NetTCPConnection -LocalPort 5175,8100 -State Listen -ErrorAction SilentlyContinue
+    $remaining = Get-NetTCPConnection -LocalPort 5175,8100,20129,20130 -State Listen -ErrorAction SilentlyContinue
     if (-not $remaining) { exit 0 }
     Start-Sleep -Milliseconds 250
 }

@@ -41,6 +41,8 @@ class DubbingRequest(BaseModel):
     source_url: HttpUrl | None = None
     local_file_path: str | None = Field(default=None, max_length=500)
     voice_gender: VoiceGender = VoiceGender.female
+    voice_engine: Literal["vieneu", "edge", "zerotts"] | None = None
+    voice_name: str | None = Field(default=None, max_length=100)
     bgm_mode: BgmMode = BgmMode.demucs
     use_demucs: bool = True
     video_speed: float = Field(default=1.0, ge=0.5, le=2.0)
@@ -77,6 +79,12 @@ class DubbingRequest(BaseModel):
     def validate_input_source(self) -> "DubbingRequest":
         if not self.source_url and not self.local_file_path:
             raise ValueError("Provide either a source URL or a local file path.")
+        if self.voice_name is not None:
+            if self.voice_engine is None:
+                raise ValueError("Chọn dịch vụ giọng đọc trước khi chọn giọng.")
+            from app.services.ai.voice_catalog import validate_voice_selection
+
+            validate_voice_selection(self.voice_engine, self.voice_name)
         return self
 
 

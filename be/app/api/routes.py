@@ -1893,6 +1893,50 @@ async def download_review_output(job_id: str) -> FileResponse:
 
 from app.services import task_manager
 
+@router.get("/voices", tags=["voices"])
+async def list_translation_voices() -> dict:
+    from app.services.ai.voice_catalog import voice_catalog
+
+    return voice_catalog()
+
+
+class VoicePreviewRequest(BaseModel):
+    engine: Literal["vieneu", "edge", "zerotts"]
+    voice_name: str = Field(min_length=1, max_length=100)
+
+
+@router.post("/voices/preview", tags=["voices"])
+async def preview_translation_voice(request: VoicePreviewRequest) -> FileResponse:
+    from starlette.background import BackgroundTask
+    from app.models.job import VoiceGender
+    from app.services.ai.voice import VoiceError, get_voice_engine
+    from app.services.ai.voice_catalog import validate_voice_selection
+
+    try:
+        validate_voice_selection(request.engine, request.voice_name)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    work_dir = Path(settings.storage_dir) / "voice_previews" / str(uuid4())
+    work_dir.mkdir(parents=True, exist_ok=True)
+    extension = "wav" if request.engine in {"vieneu", "zerotts"} else "mp3"
+    audio_file = work_dir / f"preview.{extension}"
+    try:
+        await get_voice_engine(request.engine, request.voice_name).synthesize(
+            "Xin chào. Đây là giọng đọc tiếng Việt bạn đã chọn cho video của mình.",
+            audio_file, VoiceGender.female,
+        )
+    except Exception as exc:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        if isinstance(exc, VoiceError):
+            raise HTTPException(502, str(exc)) from None
+        raise HTTPException(502, "Không nghe thử được giọng này. Kiểm tra dịch vụ giọng đọc và thử lại.") from None
+    return FileResponse(
+        audio_file, media_type="audio/wav" if extension == "wav" else "audio/mpeg",
+        headers={"Cache-Control": "no-store"},
+        background=BackgroundTask(shutil.rmtree, work_dir, ignore_errors=True),
+    )
+
+
 @router.post("/jobs", response_model=JobCreateResponse, tags=["jobs"])
 async def create_job(request: DubbingRequest, background_tasks: BackgroundTasks) -> JobCreateResponse:
     job = job_store.create(request)

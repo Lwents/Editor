@@ -142,10 +142,12 @@ async def process_dubbing_job(job_id: str) -> None:
                     job.request.voice_gender,
                     video_duration,
                     progress,
+                    engine=job.request.voice_engine,
+                    voice_name=job.request.voice_name,
                 )
             output_file = work_dir / "output_keep_existing_subtitles.mp4"
             progress(
-                "Render giọng đọc theo timecode" if narration_audio else "Edge TTS lỗi, render video với âm thanh gốc",
+                "Render giọng đọc theo timecode" if narration_audio else "Tạo giọng đọc lỗi, render video với âm thanh gốc",
                 78,
             )
             await render_video(
@@ -182,10 +184,12 @@ async def process_dubbing_job(job_id: str) -> None:
                     job.request.voice_gender,
                     video_duration,
                     progress,
+                    engine=job.request.voice_engine,
+                    voice_name=job.request.voice_name,
                 )
             output_file = work_dir / "output_hardsub.mp4"
             progress(
-                "Render phụ đề và giọng đọc theo live view" if narration_audio else "Edge TTS lỗi, render phụ đề với âm thanh gốc",
+                "Render phụ đề và giọng đọc theo live view" if narration_audio else "Tạo giọng đọc lỗi, render phụ đề với âm thanh gốc",
                 78,
             )
             await render_video(
@@ -311,9 +315,13 @@ async def _try_synthesize_voice(
     voice_gender: VoiceGender,
     video_duration: float,
     progress: Callable[[str, int], None],
+    *,
+    engine: str | None = None,
+    voice_name: str | None = None,
 ) -> tuple[Path | None, str | None]:
     try:
-        narration_audio = await get_voice_engine().synthesize_srt(
+        selected = get_voice_engine(engine, voice_name) if engine or voice_name else get_voice_engine()
+        narration_audio = await selected.synthesize_srt(
             subtitle_file,
             output_file,
             voice_gender,
@@ -324,7 +332,7 @@ async def _try_synthesize_voice(
     except VoiceError as exc:
         if not settings.render_without_tts_on_error:
             raise
-        progress("Edge TTS lỗi, tiếp tục render với âm thanh gốc", 76)
+        progress("Tạo giọng đọc lỗi, tiếp tục render với âm thanh gốc", 76)
         return None, str(exc)
 
 
@@ -334,5 +342,5 @@ def _completion_description(voice_warning: str | None) -> str:
         "Logo, phụ đề và xử lý âm thanh đã được áp dụng theo cấu hình."
     )
     if voice_warning:
-        return f"{base} Edge TTS đang lỗi nên bản này giữ âm thanh gốc. Chi tiết: {voice_warning}"
+        return f"{base} Dịch vụ giọng đọc đang lỗi nên bản này giữ âm thanh gốc. Chi tiết: {voice_warning}"
     return f"{base} Giọng đọc đã được tạo theo timecode phụ đề."

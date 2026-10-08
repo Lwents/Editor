@@ -11,9 +11,11 @@ async function forward(
 		(request.method === "GET" &&
 			(route === "health" ||
 				route === "api/jobs" ||
+				route === "api/voices" ||
 				/^api\/jobs\/[a-zA-Z0-9_-]+(\/(subtitles|download))?$/.test(route))) ||
 		(request.method === "POST" &&
 			(route === "api/uploads/video" ||
+				route === "api/voices/preview" ||
 				route === "api/jobs" ||
 				/^api\/jobs\/[a-zA-Z0-9_-]+\/cancel$/.test(route)));
 	if (!allowed)
