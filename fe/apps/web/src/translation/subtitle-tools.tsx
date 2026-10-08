@@ -433,7 +433,7 @@ export function SubtitleTools({ trackId }: { trackId?: string }) {
 						["Tâm ngang (%)", blurX, setBlurX, 0, 100],
 						["Tâm dọc (%)", blurY, setBlurY, 0, 100],
 						["Rộng (%)", blurWidth, setBlurWidth, 1, 100],
-						["Cao (%)", blurHeight, setBlurHeight, 5, 100],
+						["Cao (%)", blurHeight, setBlurHeight, 1, 100],
 					].map(([label, value, set, min, max]) => (
 						<label key={String(label)}>
 							{String(label)}
@@ -443,15 +443,21 @@ export function SubtitleTools({ trackId }: { trackId?: string }) {
 								type="number"
 								min={Number(min)}
 								max={Number(max)}
-								value={Number(value)}
-								onChange={(e) =>
-									(set as (v: number) => void)(
-										Math.max(
-											Number(min),
-											Math.min(Number(max), Number(e.target.value)),
-										),
-									)
-								}
+								key={`${String(label)}:${Number(value)}`}
+								step={0.1}
+								defaultValue={Number(value)}
+								onBlur={(e) => {
+									const raw = e.target.value.trim();
+									const parsed = Number(raw);
+									const next = raw && Number.isFinite(parsed)
+										? Math.max(Number(min), Math.min(Number(max), parsed))
+										: Number(value);
+									e.target.value = String(next);
+									(set as (v: number) => void)(next);
+								}}
+								onKeyDown={(e) => {
+									if (e.key === "Enter") e.currentTarget.blur();
+								}}
 							/>
 						</label>
 					))}
