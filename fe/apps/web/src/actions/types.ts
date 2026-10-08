@@ -1,5 +1,5 @@
 import type { MutableRefObject } from "react";
-import type { TAction } from "./definitions";
+import { ACTIONS, type TAction } from "./definitions";
 
 export type { TAction };
 
@@ -42,3 +42,9 @@ export type TActionHandlerOptions =
 	| MutableRefObject<boolean>
 	| boolean
 	| undefined;
+
+export function isActionWithOptionalArgs(value: string): value is TActionWithOptionalArgs {
+	return Object.prototype.hasOwnProperty.call(ACTIONS, value)
+		&& value !== "remove-media-asset"
+		&& value !== "remove-media-assets";
+}

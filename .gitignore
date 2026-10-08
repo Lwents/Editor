@@ -48,3 +48,12 @@ integration-logs/
 *.zip
 *.7z
 .DS_Store
+
+/.runtime/
+
+# Local configuration copies and editor scratch files
+.env.*.bak
+*.bak
+*.tmp
+*.swp
+*.swo

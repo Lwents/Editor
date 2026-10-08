@@ -85,7 +85,7 @@
     "@napi-rs/canvas": "^0.1.92",
     "@tailwindcss/postcss": "^4.2.1",
     "@tailwindcss/typography": "^0.5.19",
-    "@types/bun": "latest",
+    "@types/bun": "^1.4.2",
     "@types/node": "^24.2.1",
     "@types/pg": "^8.15.4",
     "@types/react": "^19",

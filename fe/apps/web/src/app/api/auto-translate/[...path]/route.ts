@@ -23,12 +23,17 @@ async function forward(
 		);
 	// This bridge is for the local editor. Reject cross-site writes.
 	const origin = request.headers.get("origin");
-	if (
-		request.method === "POST" &&
-		origin &&
-		new URL(origin).host !== request.headers.get("host")
-	)
-		return Response.json({ detail: "Origin không hợp lệ." }, { status: 403 });
+	if (request.method === "POST" && origin) {
+		let isSameOrigin = false;
+		try {
+			isSameOrigin = new URL(origin).host === request.headers.get("host");
+		} catch {
+			// Invalid origins are rejected like any other cross-site write.
+		}
+		if (!isSameOrigin)
+			return Response.json({ detail: "Origin không hợp lệ." }, { status: 403 });
+	}
+
 	try {
 		const headers = new Headers();
 		for (const key of ["content-type", "range"]) {
