@@ -1,0 +1,2984 @@
+[
+	{
+		"index": 0,
+		"id": "brightness",
+		"name": "Brightness",
+		"description": "Adjusts the brightness of a source image",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Brightness",
+				"description": "The brightness value",
+				"value": 0.5
+			}
+		]
+	},
+	{
+		"index": 1,
+		"id": "bw0r",
+		"name": "bw0r",
+		"description": "Turns image black/white.",
+		"colorModel": 1,
+		"params": []
+	},
+	{
+		"index": 2,
+		"id": "colorize",
+		"name": "colorize",
+		"description": "Colorizes image to selected hue, saturation and lightness",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "hue",
+				"description": "Color shade of the colorized image",
+				"value": 0.5
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "saturation",
+				"description": "Amount of color in the colorized image",
+				"value": 0.5
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "lightness",
+				"description": "Lightness of the colorized image",
+				"value": 0.5
+			}
+		]
+	},
+	{
+		"index": 3,
+		"id": "dither",
+		"name": "dither",
+		"description": "Dithers the image and reduces the number of available colors",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "levels",
+				"description": "Number of values per channel",
+				"value": 0.10416666666666667
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "matrixid",
+				"description": "Id of matrix used for dithering",
+				"value": 1
+			}
+		]
+	},
+	{
+		"index": 4,
+		"id": "distort0r",
+		"name": "Distort0r",
+		"description": "Plasma",
+		"colorModel": 2,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Amplitude",
+				"description": "The amplitude of the plasma signal",
+				"value": 1
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "Frequency",
+				"description": "The frequency of the plasma signal",
+				"value": 0.005
+			},
+			{
+				"index": 2,
+				"type": 0,
+				"name": "Use Velocity",
+				"description": "'Time Based' or 'Adjustable Velocity'",
+				"value": 0
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "Velocity",
+				"description": "Changing speed of the plasma signal",
+				"value": 0.5
+			}
+		]
+	},
+	{
+		"index": 5,
+		"id": "emboss",
+		"name": "emboss",
+		"description": "Creates embossed relief image of source image",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "azimuth",
+				"description": "Light direction",
+				"value": 0.375
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "elevation",
+				"description": "Background lightness",
+				"value": 0.3333333333333333
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "width45",
+				"description": "Bump height",
+				"value": 0.25
+			}
+		]
+	},
+	{
+		"index": 6,
+		"id": "glitch0r",
+		"name": "Glitch0r",
+		"description": "Adds glitches and block shifting",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Glitch frequency",
+				"description": "How frequently the glitch should be applied",
+				"value": 0
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "Block height",
+				"description": "Height range of the block that will be shifted/glitched",
+				"value": 0.4968553459119497
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "Shift intensity",
+				"description": "How much we should move blocks when glitching",
+				"value": 0.4968553459119497
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "Color glitching intensity",
+				"description": "How intensive should be color distortion",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 7,
+		"id": "glow",
+		"name": "Glow",
+		"description": "Creates a Glamorous Glow",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Blur",
+				"description": "Blur of the glow",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 8,
+		"id": "heatmap0r",
+		"name": "heatmap0r",
+		"description": "Performs a continuous trichromatic tinting",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 2,
+				"name": "Map black to",
+				"description": "The color to map source color with zero luminance",
+				"value": [0.27000001072883606, 0, 0.5]
+			},
+			{
+				"index": 1,
+				"type": 2,
+				"name": "Map grey to",
+				"description": "The color to map source color with mid luminance",
+				"value": [1, 0, 0.5]
+			},
+			{
+				"index": 2,
+				"type": 2,
+				"name": "Map white to",
+				"description": "The color to map source color with full luminance",
+				"value": [1, 1, 0]
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "Grey point",
+				"description": "Point in the luminance axis grey color is located",
+				"value": 0.5
+			}
+		]
+	},
+	{
+		"index": 9,
+		"id": "hueshift0r",
+		"name": "Hueshift0r",
+		"description": "Shifts the hue of a source image",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Hue",
+				"description": "The shift value",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 10,
+		"id": "invert0r",
+		"name": "Invert0r",
+		"description": "Inverts all colors of a source image",
+		"colorModel": 1,
+		"params": []
+	},
+	{
+		"index": 11,
+		"id": "pixeliz0r",
+		"name": "pixeliz0r",
+		"description": "Pixelize input image.",
+		"colorModel": 2,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Block width",
+				"description": "Horizontal size of one 'pixel'",
+				"value": 0.0875
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "Block height",
+				"description": "Vertical size of one 'pixel'",
+				"value": 0.0875
+			},
+			{
+				"index": 2,
+				"type": 0,
+				"name": "Pass-through alpha",
+				"description": "Do not average the alpha channel over each block",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 12,
+		"id": "posterize",
+		"name": "posterize",
+		"description": "Posterizes image by reducing the number of colors used in image",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "levels",
+				"description": "Number of values per channel",
+				"value": 0.10416666666666667
+			}
+		]
+	},
+	{
+		"index": 13,
+		"id": "rgbsplit0r",
+		"name": "rgbsplit0r",
+		"description": "RGB splitting and shifting",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Vertical split distance",
+				"description": "How far should layers be moved vertically from each other",
+				"value": 0.5
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "Horizontal split distance",
+				"description": "How far should layers be moved horizontally from each other",
+				"value": 0.5
+			}
+		]
+	},
+	{
+		"index": 14,
+		"id": "saturat0r",
+		"name": "Saturat0r",
+		"description": "Adjusts the saturation of a source image",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Saturation",
+				"description": "The saturation value",
+				"value": 0.125
+			}
+		]
+	},
+	{
+		"index": 15,
+		"id": "threshold0r",
+		"name": "Threshold0r",
+		"description": "Thresholds a source image",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Threshold",
+				"description": "The threshold",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 16,
+		"id": "vertigo",
+		"name": "Vertigo",
+		"description": "alpha blending with zoomed and rotated images",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "PhaseIncrement",
+				"description": "Phase increment",
+				"value": 0.02
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "Zoomrate",
+				"description": "Zoomrate",
+				"value": 0.202
+			}
+		]
+	},
+	{
+		"index": 17,
+		"id": "B",
+		"name": "B",
+		"description": "Extracts Blue from Image",
+		"colorModel": 1,
+		"params": []
+	},
+	{
+		"index": 18,
+		"id": "G",
+		"name": "G",
+		"description": "Extracts Green from Image",
+		"colorModel": 1,
+		"params": []
+	},
+	{
+		"index": 19,
+		"id": "IIRblur",
+		"name": "IIR blur",
+		"description": "Three types of fast IIR blurring",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Amount",
+				"description": "Amount of blur",
+				"value": 0.20000001788139343
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "Type",
+				"description": "Blur type",
+				"value": 0.333344429731369
+			},
+			{
+				"index": 2,
+				"type": 0,
+				"name": "Edge",
+				"description": "Edge compensation",
+				"value": 1
+			}
+		]
+	},
+	{
+		"index": 20,
+		"id": "R",
+		"name": "R",
+		"description": "Extracts Red from Image",
+		"colorModel": 1,
+		"params": []
+	},
+	{
+		"index": 21,
+		"id": "aech0r",
+		"name": "aech0r",
+		"description": "analog video echo",
+		"colorModel": 0,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Fade Factor",
+				"description": "Disappearance rate of the echo",
+				"value": 0.15
+			},
+			{
+				"index": 1,
+				"type": 0,
+				"name": "Direction",
+				"description": "Darker or Brighter echo",
+				"value": 0
+			},
+			{
+				"index": 2,
+				"type": 0,
+				"name": "Keep RED",
+				"description": "Influence on Red channel",
+				"value": 0
+			},
+			{
+				"index": 3,
+				"type": 0,
+				"name": "Keep GREEN",
+				"description": "Influence on Green channel",
+				"value": 0
+			},
+			{
+				"index": 4,
+				"type": 0,
+				"name": "Keep BLUE",
+				"description": "Influence on Blue channel",
+				"value": 0
+			},
+			{
+				"index": 5,
+				"type": 1,
+				"name": "Strobe period",
+				"description": "Rate of the stroboscope: from 0 to 8 frames",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 22,
+		"id": "alpha0ps_alpha0ps",
+		"name": "alpha0ps",
+		"description": "Display and manipulation of the alpha channel",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Display",
+				"description": "",
+				"value": 0
+			},
+			{
+				"index": 1,
+				"type": 0,
+				"name": "Display input alpha",
+				"description": "",
+				"value": 0
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "Operation",
+				"description": "",
+				"value": 0
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "Threshold",
+				"description": "",
+				"value": 0.5
+			},
+			{
+				"index": 4,
+				"type": 1,
+				"name": "Shrink/Grow/Blur amount",
+				"description": "",
+				"value": 0.20000401139259338
+			},
+			{
+				"index": 5,
+				"type": 0,
+				"name": "Invert",
+				"description": "",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 23,
+		"id": "alpha0ps_alphagrad",
+		"name": "alphagrad",
+		"description": "Fills alpha channel with a gradient",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Position",
+				"description": "",
+				"value": 0.5
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "Transition width",
+				"description": "",
+				"value": 0.5
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "Tilt",
+				"description": "",
+				"value": 0.5
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "Min",
+				"description": "",
+				"value": 0
+			},
+			{
+				"index": 4,
+				"type": 1,
+				"name": "Max",
+				"description": "",
+				"value": 1
+			},
+			{
+				"index": 5,
+				"type": 1,
+				"name": "Operation",
+				"description": "",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 24,
+		"id": "alpha0ps_alphaspot",
+		"name": "alphaspot",
+		"description": "Draws simple shapes into the alpha channel",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Shape",
+				"description": "",
+				"value": 0
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "Position X",
+				"description": "",
+				"value": 0.5
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "Position Y",
+				"description": "",
+				"value": 0.5
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "Size X",
+				"description": "",
+				"value": 0.10000000149011612
+			},
+			{
+				"index": 4,
+				"type": 1,
+				"name": "Size Y",
+				"description": "",
+				"value": 0.10000000149011612
+			},
+			{
+				"index": 5,
+				"type": 1,
+				"name": "Tilt",
+				"description": "",
+				"value": 0.5
+			},
+			{
+				"index": 6,
+				"type": 1,
+				"name": "Transition width",
+				"description": "",
+				"value": 0.20000000298023224
+			},
+			{
+				"index": 7,
+				"type": 1,
+				"name": "Min",
+				"description": "",
+				"value": 0
+			},
+			{
+				"index": 8,
+				"type": 1,
+				"name": "Max",
+				"description": "",
+				"value": 1
+			},
+			{
+				"index": 9,
+				"type": 1,
+				"name": "Operation",
+				"description": "",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 25,
+		"id": "balanc0r",
+		"name": "White Balance",
+		"description": "Adjust the white balance / color temperature",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 2,
+				"name": "Neutral Color",
+				"description": "Choose a color from the source image that should be white.",
+				"value": [1, 1, 1]
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "Green Tint",
+				"description": "Adjust the level of green.",
+				"value": 0.1333333333333333
+			}
+		]
+	},
+	{
+		"index": 26,
+		"id": "baltan",
+		"name": "Baltan",
+		"description": "delayed alpha smoothed blit of time",
+		"colorModel": 0,
+		"params": []
+	},
+	{
+		"index": 27,
+		"id": "bgsubtract0r",
+		"name": "BgSubtract0r",
+		"description": "Bluescreen the background of a static video.",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "threshold",
+				"description": "Threshold for difference",
+				"value": 0.10196078431372549
+			},
+			{
+				"index": 1,
+				"type": 0,
+				"name": "denoise",
+				"description": "Remove noise",
+				"value": 1
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "blur",
+				"description": "Blur alpha channel by given radius (to remove sharp edges)",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 28,
+		"id": "bluescreen0r",
+		"name": "bluescreen0r",
+		"description": "Color to alpha (blit SRCALPHA)",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 2,
+				"name": "Color",
+				"description": "The color to make transparent (B G R)",
+				"value": [0, 0.9399999976158142, 0]
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "Distance",
+				"description": "Distance to Color (127 is good)",
+				"value": 0.288
+			},
+			{
+				"index": 2,
+				"type": 0,
+				"name": "Invert",
+				"description": "Whether to produce the inverse of the effect on the alpha channel",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 29,
+		"id": "c0rners",
+		"name": "c0rners",
+		"description": "Four corners geometry engine",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Corner 1 X",
+				"description": "X coordinate of corner 1",
+				"value": 0.33333298563957214
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "Corner 1 Y",
+				"description": "Y coordinate of corner 1",
+				"value": 0.33333298563957214
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "Corner 2 X",
+				"description": "X coordinate of corner 2",
+				"value": 0.6666659712791443
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "Corner 2 Y",
+				"description": "Y coordinate of corner 2",
+				"value": 0.33333298563957214
+			},
+			{
+				"index": 4,
+				"type": 1,
+				"name": "Corner 3 X",
+				"description": "X coordinate of corner 3",
+				"value": 0.6666659712791443
+			},
+			{
+				"index": 5,
+				"type": 1,
+				"name": "Corner 3 Y",
+				"description": "Y coordinate of corner 3",
+				"value": 0.6666659712791443
+			},
+			{
+				"index": 6,
+				"type": 1,
+				"name": "Corner 4 X",
+				"description": "X coordinate of corner 4",
+				"value": 0.33333298563957214
+			},
+			{
+				"index": 7,
+				"type": 1,
+				"name": "Corner 4 Y",
+				"description": "Y coordinate of corner 4",
+				"value": 0.6666659712791443
+			},
+			{
+				"index": 8,
+				"type": 0,
+				"name": "Enable Stretch",
+				"description": "Enable stretching",
+				"value": 0
+			},
+			{
+				"index": 9,
+				"type": 1,
+				"name": "Stretch X",
+				"description": "Amount of stretching in X direction",
+				"value": 0.5
+			},
+			{
+				"index": 10,
+				"type": 1,
+				"name": "Stretch Y",
+				"description": "Amount of stretching in Y direction",
+				"value": 0.5
+			},
+			{
+				"index": 11,
+				"type": 1,
+				"name": "Interpolator",
+				"description": "Quality of interpolation",
+				"value": 0.1666666716337204
+			},
+			{
+				"index": 12,
+				"type": 0,
+				"name": "Transparent Background",
+				"description": "Makes background transparent",
+				"value": 0
+			},
+			{
+				"index": 13,
+				"type": 1,
+				"name": "Feather Alpha",
+				"description": "Makes smooth transition into transparent",
+				"value": 0.009999999776482582
+			},
+			{
+				"index": 14,
+				"type": 1,
+				"name": "Alpha operation",
+				"description": "",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 30,
+		"id": "camerashake",
+		"name": "Camera Shake Ultimate",
+		"description": "Camera movement effect with rotation, opacity, and blur.",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "amplitude_x",
+				"description": "Maximum horizontal shake amplitude",
+				"value": 0.25
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "amplitude_y",
+				"description": "Maximum vertical shake amplitude",
+				"value": 0.25
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "rotation",
+				"description": "Maximum rotation shake",
+				"value": 0
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "zoom",
+				"description": "Zoom factor to hide black borders",
+				"value": 0.2
+			},
+			{
+				"index": 4,
+				"type": 1,
+				"name": "speed",
+				"description": "Speed or frequency of the shake",
+				"value": 0.25
+			},
+			{
+				"index": 5,
+				"type": 1,
+				"name": "opacity",
+				"description": "Opacity of the effect",
+				"value": 1
+			},
+			{
+				"index": 6,
+				"type": 1,
+				"name": "blur",
+				"description": "Amount of motion blur",
+				"value": 0
+			},
+			{
+				"index": 7,
+				"type": 2,
+				"name": "bg_color",
+				"description": "Background color for exposed borders",
+				"value": [0, 0, 0]
+			}
+		]
+	},
+	{
+		"index": 31,
+		"id": "cartoon",
+		"name": "Cartoon",
+		"description": "Cartoonify video, do a form of edge detect",
+		"colorModel": 0,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "triplevel",
+				"description": "level of trip: mapped to [0,1] asymptotical",
+				"value": 1
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "diffspace",
+				"description": "difference space: a value from 0 to 256 (mapped to [0,1])",
+				"value": 0.00390625
+			}
+		]
+	},
+	{
+		"index": 32,
+		"id": "cluster",
+		"name": "K-Means Clustering",
+		"description": "Clusters of a source image by color and spatial distance",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Num",
+				"description": "The number of clusters",
+				"value": 0.5
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "Dist weight",
+				"description": "The weight on distance",
+				"value": 0.5
+			}
+		]
+	},
+	{
+		"index": 33,
+		"id": "coloradj_RGB",
+		"name": "coloradj_RGB",
+		"description": "Simple color adjustment",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "R",
+				"description": "Amount of red",
+				"value": 0.5
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "G",
+				"description": "Amount of green",
+				"value": 0.5
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "B",
+				"description": "Amount of blue",
+				"value": 0.5
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "Action",
+				"description": "Type of color adjustment",
+				"value": 0.333344429731369
+			},
+			{
+				"index": 4,
+				"type": 0,
+				"name": "Keep luma",
+				"description": "Don't change brightness",
+				"value": 1
+			},
+			{
+				"index": 5,
+				"type": 0,
+				"name": "Alpha controlled",
+				"description": "Adjust only areas with nonzero alpha",
+				"value": 0
+			},
+			{
+				"index": 6,
+				"type": 1,
+				"name": "Luma formula",
+				"description": "",
+				"value": 0.5000250339508057
+			}
+		]
+	},
+	{
+		"index": 34,
+		"id": "colordistance",
+		"name": "Color Distance",
+		"description": "Calculates the distance between the selected color and the current pixel and uses that value as new pixel value",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 2,
+				"name": "Color",
+				"description": "The Source Color",
+				"value": [0.5, 0.5, 0.5]
+			}
+		]
+	},
+	{
+		"index": 35,
+		"id": "colorhalftone",
+		"name": "colorhalftone",
+		"description": "Filters image to resemble a halftone print in which tones are represented as variable sized dots",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "dot radius",
+				"description": "Halftone pattern dot size",
+				"value": 0.4
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "cyan angle",
+				"description": "Cyan dots angle",
+				"value": 0.3
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "magenta angle",
+				"description": "Magenta dots angle",
+				"value": 0.45
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "yellow angle",
+				"description": "Yellow dots angle",
+				"value": 0.25
+			}
+		]
+	},
+	{
+		"index": 36,
+		"id": "contrast0r",
+		"name": "Contrast0r",
+		"description": "Adjusts the contrast of a source image",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Contrast",
+				"description": "The contrast value",
+				"value": 0.5
+			}
+		]
+	},
+	{
+		"index": 37,
+		"id": "d90stairsteppingfix",
+		"name": "Nikon D90 Stairstepping fix",
+		"description": "Removes the Stairstepping from Nikon D90 videos (720p only) by interpolation",
+		"colorModel": 1,
+		"params": []
+	},
+	{
+		"index": 38,
+		"id": "defish0r",
+		"name": "Defish0r",
+		"description": "Non rectilinear lens mappings",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Amount",
+				"description": "Focal Ratio",
+				"value": 0
+			},
+			{
+				"index": 1,
+				"type": 0,
+				"name": "DeFish",
+				"description": "Fish or Defish",
+				"value": 0
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "Type",
+				"description": "Mapping function",
+				"value": 0.6666666865348816
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "Scaling",
+				"description": "Scaling method",
+				"value": 0.6666666865348816
+			},
+			{
+				"index": 4,
+				"type": 1,
+				"name": "Manual Scale",
+				"description": "Manual Scale",
+				"value": 0.5
+			},
+			{
+				"index": 5,
+				"type": 1,
+				"name": "Interpolator",
+				"description": "Quality of interpolation",
+				"value": 0.1666666716337204
+			},
+			{
+				"index": 6,
+				"type": 1,
+				"name": "Aspect type",
+				"description": "Pixel aspect ratio presets",
+				"value": 0
+			},
+			{
+				"index": 7,
+				"type": 1,
+				"name": "Manual Aspect",
+				"description": "Manual Pixel Aspect ratio",
+				"value": 0.5
+			},
+			{
+				"index": 8,
+				"type": 0,
+				"name": "Crop",
+				"description": "Straighten all edges of video frame",
+				"value": 0
+			},
+			{
+				"index": 9,
+				"type": 1,
+				"name": "Non-Linear scale",
+				"description": "Fix camera scaling between 4:3 and 16:9",
+				"value": 0.5
+			},
+			{
+				"index": 10,
+				"type": 1,
+				"name": "Y Scale",
+				"description": "Scale Y to affect aspect ratio",
+				"value": 0.5
+			}
+		]
+	},
+	{
+		"index": 39,
+		"id": "delay0r",
+		"name": "delay0r",
+		"description": "video delay",
+		"colorModel": 0,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "DelayTime",
+				"description": "the delay time",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 40,
+		"id": "delaygrab",
+		"name": "Delaygrab",
+		"description": "delayed frame blitting mapped on a time bitmap",
+		"colorModel": 0,
+		"params": []
+	},
+	{
+		"index": 41,
+		"id": "denoise_hqdn3d",
+		"name": "hqdn3d",
+		"description": "High quality 3D denoiser from Mplayer",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Spatial",
+				"description": "Amount of spatial filtering",
+				"value": 0.03999999910593033
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "Temporal",
+				"description": "Amount of temporal filtering",
+				"value": 0.05999999865889549
+			}
+		]
+	},
+	{
+		"index": 42,
+		"id": "edgeglow",
+		"name": "Edgeglow",
+		"description": "Edgeglow filter",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "lthresh",
+				"description": "threshold for edge lightening",
+				"value": 0
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "lupscale",
+				"description": "multiplier for upscaling edge brightness",
+				"value": 0
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "lredscale",
+				"description": "multiplier for downscaling non-edge brightness",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 43,
+		"id": "elastic_scale",
+		"name": "Elastic scale filter",
+		"description": "This is a frei0r filter which allows one to scale video footage non-linearly.",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Center",
+				"description": "Horizontal center position of the linear area",
+				"value": 0.5
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "Linear Width",
+				"description": "Width of the linear area",
+				"value": 0
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "Linear Scale Factor",
+				"description": "Amount how much the linear area is scaled",
+				"value": 0.7
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "Non-Linear Scale Factor",
+				"description": "Amount how much the outer left and outer right areas are scaled non linearly",
+				"value": 0.7125
+			}
+		]
+	},
+	{
+		"index": 44,
+		"id": "equaliz0r",
+		"name": "Equaliz0r",
+		"description": "Equalizes the intensity histograms",
+		"colorModel": 1,
+		"params": []
+	},
+	{
+		"index": 45,
+		"id": "filmgrain",
+		"name": "Film Grain",
+		"description": "Adds film-like grain and softens the picture.",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Grain Amount",
+				"description": "The intensity of the grain.",
+				"value": 0.5
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "Red Grain",
+				"description": "The percentage of grain applied to the red channel.",
+				"value": 0.75
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "Green Grain",
+				"description": "The percentage of grain applied to the green channel.",
+				"value": 1
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "Blue Grain",
+				"description": "The percentage of grain applied to the blue channel.",
+				"value": 0.5
+			},
+			{
+				"index": 4,
+				"type": 1,
+				"name": "Blur Amount",
+				"description": "The intensity of the blur.",
+				"value": 0.5
+			},
+			{
+				"index": 5,
+				"type": 1,
+				"name": "Dust Amount",
+				"description": "The amount of dust particles on the image.",
+				"value": 0.2
+			},
+			{
+				"index": 6,
+				"type": 1,
+				"name": "Flicker",
+				"description": "The amount of variation in brightness between frames.",
+				"value": 0.5
+			}
+		]
+	},
+	{
+		"index": 46,
+		"id": "flippo",
+		"name": "Flippo",
+		"description": "Flipping in x and y axis",
+		"colorModel": 2,
+		"params": [
+			{
+				"index": 0,
+				"type": 0,
+				"name": "X axis",
+				"description": "Flipping on the horizontal axis",
+				"value": 0
+			},
+			{
+				"index": 1,
+				"type": 0,
+				"name": "Y axis",
+				"description": "Flipping on the vertical axis",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 47,
+		"id": "gamma",
+		"name": "Gamma",
+		"description": "Adjusts the gamma value of a source image",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Gamma",
+				"description": "The gamma value",
+				"value": 1
+			}
+		]
+	},
+	{
+		"index": 48,
+		"id": "gateweave",
+		"name": "Gate Weave",
+		"description": "Randomly moves frame around to simulate film gate weave.",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Interval",
+				"description": "The amount of time before the position is randomized again. The larger the number the slower the picture will move.",
+				"value": 0.6
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "Maximum Horizontal Movement",
+				"description": "The maximum distance the picture could move left or right. The larger the number the more the picture moves and the less subtle the effect.",
+				"value": 0.2
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "Maximum Vertical Movement",
+				"description": "The maximum distance the picture could move up or down. The larger the number the more the picture moves and the less subtle the effect.",
+				"value": 0.2
+			}
+		]
+	},
+	{
+		"index": 49,
+		"id": "kaleid0sc0pe",
+		"name": "Kaleid0sc0pe",
+		"description": "Applies a kaleid0sc0pe effect",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "origin_x",
+				"description": "origin of the kaleid0sc0pe in x. default 0.5",
+				"value": 0.5
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "origin_y",
+				"description": "origin of the kaleid0sc0pe in y. default 0.5",
+				"value": 0.5
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "segmentation",
+				"description": "kaleid0sc0pe segmentation / 128, segmentations of 1, 2 or multiples of 4 work best. default 16/128",
+				"value": 0.125
+			},
+			{
+				"index": 3,
+				"type": 0,
+				"name": "specify_source",
+				"description": "if true then source angle is read from source_segment, otherwise auto-calculated",
+				"value": 0
+			},
+			{
+				"index": 4,
+				"type": 1,
+				"name": "source_segment",
+				"description": "centre of source segment if specify_source is true. 0 is in +x and rotates counter clockwise",
+				"value": 0
+			},
+			{
+				"index": 5,
+				"type": 1,
+				"name": "segmentation_direction",
+				"description": "segmentation direction, < 1/3 is none, < 2/3 is counter clockwise, otherwise clockwise",
+				"value": 1
+			},
+			{
+				"index": 6,
+				"type": 0,
+				"name": "reflect_edges",
+				"description": "if true then reflections that end up outside the source reflect back into it, otherwise the specified background colour is used.",
+				"value": 1
+			},
+			{
+				"index": 7,
+				"type": 1,
+				"name": "edge_threshold",
+				"description": "edge threshold / 4, reflections outside the image but within this distance clamp to the edge. default 0",
+				"value": 0
+			},
+			{
+				"index": 8,
+				"type": 1,
+				"name": "preferred_corner",
+				"description": "preferred corner, 0 is top right, 0.25 top left, 0.5 bottom left, 0.75 bottom right",
+				"value": 0
+			},
+			{
+				"index": 9,
+				"type": 0,
+				"name": "corner_search",
+				"description": "if true search clockwise for furthest corner, otherwise counter clockwise",
+				"value": 1
+			},
+			{
+				"index": 10,
+				"type": 2,
+				"name": "bg_color",
+				"description": "colour to use if reflection lies outside of source image and not reflecting back in. default 1,0,1",
+				"value": [1, 0, 1]
+			},
+			{
+				"index": 11,
+				"type": 1,
+				"name": "bg_alpha",
+				"description": "alpha to use if reflection lies outside of source image and not reflecting back in. default 1",
+				"value": 1
+			},
+			{
+				"index": 12,
+				"type": 0,
+				"name": "multithreaded",
+				"description": "set to true to enable multithreaded calculation. default true",
+				"value": 1
+			},
+			{
+				"index": 13,
+				"type": 1,
+				"name": "n_threads",
+				"description": "the number of threads to use, if 0 then autocalculate otherwise value * 32. default 0",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 50,
+		"id": "lenscorrection",
+		"name": "Lens Correction",
+		"description": "Allows compensation of lens distortion",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "X center",
+				"description": "",
+				"value": 0.5
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "Y center",
+				"description": "",
+				"value": 0.5
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "Correction near center",
+				"description": "",
+				"value": 0.5
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "Correction near edges",
+				"description": "",
+				"value": 0.5
+			},
+			{
+				"index": 4,
+				"type": 1,
+				"name": "Brightness",
+				"description": "",
+				"value": 0.5
+			}
+		]
+	},
+	{
+		"index": 51,
+		"id": "letterb0xed",
+		"name": "LetterB0xed",
+		"description": "Adds Black Borders at top and bottom for Cinema Look",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Border Width",
+				"description": "",
+				"value": 0.4
+			},
+			{
+				"index": 1,
+				"type": 0,
+				"name": "Transparency",
+				"description": "",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 52,
+		"id": "levels",
+		"name": "Levels",
+		"description": "Adjust luminance or color channel intensity",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Channel",
+				"description": "Channel to adjust levels. 0%=R, 10%=G, 20%=B, 30%=Luma",
+				"value": 0.3
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "Input black level",
+				"description": "Input black level",
+				"value": 0
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "Input white level",
+				"description": "Input white level",
+				"value": 1
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "Gamma",
+				"description": "Gamma",
+				"value": 0.25
+			},
+			{
+				"index": 4,
+				"type": 1,
+				"name": "Black output",
+				"description": "Black output",
+				"value": 0
+			},
+			{
+				"index": 5,
+				"type": 1,
+				"name": "White output",
+				"description": "White output",
+				"value": 1
+			},
+			{
+				"index": 6,
+				"type": 0,
+				"name": "Show histogram",
+				"description": "Show histogram",
+				"value": 1
+			},
+			{
+				"index": 7,
+				"type": 1,
+				"name": "Histogram position",
+				"description": "Histogram position. 0%=TL, 10%=TR, 20%=BL, 30%=BR",
+				"value": 0.3
+			}
+		]
+	},
+	{
+		"index": 53,
+		"id": "lightgraffiti",
+		"name": "Light Graffiti",
+		"description": "Creates light graffitis from a video by keeping the brightest spots.",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "sensitivity",
+				"description": "Sensitivity of the effect for light (higher sensitivity will lead to brighter lights)",
+				"value": 0.2
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "backgroundWeight",
+				"description": "Describes how strong the (accumulated) background should shine through",
+				"value": 0
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "thresholdBrightness",
+				"description": "Brightness threshold to distinguish between foreground and background",
+				"value": 0.5882352941176471
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "thresholdDifference",
+				"description": "Threshold: Difference to background to distinguish between fore- and background",
+				"value": 0
+			},
+			{
+				"index": 4,
+				"type": 1,
+				"name": "thresholdDiffSum",
+				"description": "Threshold for sum of differences. Can in most cases be ignored (set to 0).",
+				"value": 0
+			},
+			{
+				"index": 5,
+				"type": 1,
+				"name": "dim",
+				"description": "Dimming of the light mask",
+				"value": 0
+			},
+			{
+				"index": 6,
+				"type": 1,
+				"name": "saturation",
+				"description": "Saturation of lights",
+				"value": 0.25
+			},
+			{
+				"index": 7,
+				"type": 1,
+				"name": "lowerOverexposure",
+				"description": "Prevents some overexposure if the light source stays steady too long (varying speed)",
+				"value": 0
+			},
+			{
+				"index": 8,
+				"type": 0,
+				"name": "statsBrightness",
+				"description": "Display the brightness and threshold, for adjusting the brightness threshold parameter",
+				"value": 0
+			},
+			{
+				"index": 9,
+				"type": 0,
+				"name": "statsDifference",
+				"description": "Display the background difference and threshold",
+				"value": 0
+			},
+			{
+				"index": 10,
+				"type": 0,
+				"name": "statsDiffSum",
+				"description": "Display the sum of the background difference and the threshold",
+				"value": 0
+			},
+			{
+				"index": 11,
+				"type": 0,
+				"name": "reset",
+				"description": "Reset filter masks",
+				"value": 0
+			},
+			{
+				"index": 12,
+				"type": 0,
+				"name": "transparentBackground",
+				"description": "Make the background transparent",
+				"value": 0
+			},
+			{
+				"index": 13,
+				"type": 0,
+				"name": "blackReference",
+				"description": "Uses black as background image instead of the first frame.",
+				"value": 0
+			},
+			{
+				"index": 14,
+				"type": 1,
+				"name": "longAlpha",
+				"description": "Alpha value for moving average",
+				"value": 0
+			},
+			{
+				"index": 15,
+				"type": 0,
+				"name": "nonlinearDim",
+				"description": "Nonlinear dimming (may look more natural)",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 54,
+		"id": "luminance",
+		"name": "Luminance",
+		"description": "Creates a luminance map of the image",
+		"colorModel": 1,
+		"params": []
+	},
+	{
+		"index": 55,
+		"id": "mask0mate",
+		"name": "Mask0Mate",
+		"description": "Creates an square alpha-channel mask",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Left",
+				"description": "",
+				"value": 0.2
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "Right",
+				"description": "",
+				"value": 0.2
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "Top",
+				"description": "",
+				"value": 0.2
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "Bottom",
+				"description": "",
+				"value": 0.2
+			},
+			{
+				"index": 4,
+				"type": 0,
+				"name": "Invert",
+				"description": "Invert the mask, creates a hole in the frame.",
+				"value": 0
+			},
+			{
+				"index": 5,
+				"type": 1,
+				"name": "Blur",
+				"description": "Blur the outline of the mask",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 56,
+		"id": "measure_pr0be",
+		"name": "pr0be",
+		"description": "Measure video values",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Measurement",
+				"description": "What measurement to display",
+				"value": 0
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "X",
+				"description": "X position of probe",
+				"value": 0.5
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "Y",
+				"description": "Y position of probe",
+				"value": 0.5
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "X size",
+				"description": "X size of probe",
+				"value": 0.25
+			},
+			{
+				"index": 4,
+				"type": 1,
+				"name": "Y size",
+				"description": "Y size of probe",
+				"value": 0.25
+			},
+			{
+				"index": 5,
+				"type": 0,
+				"name": "256 scale",
+				"description": "use 0-255 instead of 0.0-1.0",
+				"value": 0
+			},
+			{
+				"index": 6,
+				"type": 0,
+				"name": "Show alpha",
+				"description": "Display alpha value too",
+				"value": 0
+			},
+			{
+				"index": 7,
+				"type": 0,
+				"name": "Big window",
+				"description": "Display more data",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 57,
+		"id": "measure_pr0file",
+		"name": "pr0file",
+		"description": "2D video oscilloscope",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "X",
+				"description": "X position of profile",
+				"value": 0.5
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "Y",
+				"description": "Y position of profile",
+				"value": 0.5
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "Tilt",
+				"description": "Tilt of profile",
+				"value": 0.5
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "Length",
+				"description": "Length of profile",
+				"value": 0.48479166626930237
+			},
+			{
+				"index": 4,
+				"type": 1,
+				"name": "Channel",
+				"description": "Channel to numerically display",
+				"value": 0.37500470876693726
+			},
+			{
+				"index": 5,
+				"type": 1,
+				"name": "Marker 1",
+				"description": "Position of marker 1",
+				"value": 0.1666666716337204
+			},
+			{
+				"index": 6,
+				"type": 1,
+				"name": "Marker 2",
+				"description": "Position of marker 2",
+				"value": 0.1666666716337204
+			},
+			{
+				"index": 7,
+				"type": 0,
+				"name": "R trace",
+				"description": "Show R trace on scope",
+				"value": 1
+			},
+			{
+				"index": 8,
+				"type": 0,
+				"name": "G trace",
+				"description": "Show G trace on scope",
+				"value": 1
+			},
+			{
+				"index": 9,
+				"type": 0,
+				"name": "B trace",
+				"description": "Show B trace on scope",
+				"value": 1
+			},
+			{
+				"index": 10,
+				"type": 0,
+				"name": "Y trace",
+				"description": "Show Y' trace on scope",
+				"value": 0
+			},
+			{
+				"index": 11,
+				"type": 0,
+				"name": "Pr trace",
+				"description": "Show Pr trace on scope",
+				"value": 0
+			},
+			{
+				"index": 12,
+				"type": 0,
+				"name": "Pb trace",
+				"description": "Show Pb trace on scope",
+				"value": 0
+			},
+			{
+				"index": 13,
+				"type": 0,
+				"name": "Alpha trace",
+				"description": "Show Alpha trace on scope",
+				"value": 0
+			},
+			{
+				"index": 14,
+				"type": 0,
+				"name": "Display average",
+				"description": "e",
+				"value": 1
+			},
+			{
+				"index": 15,
+				"type": 0,
+				"name": "Display RMS",
+				"description": "",
+				"value": 1
+			},
+			{
+				"index": 16,
+				"type": 0,
+				"name": "Display minimum",
+				"description": "",
+				"value": 0
+			},
+			{
+				"index": 17,
+				"type": 0,
+				"name": "Display maximum",
+				"description": "",
+				"value": 0
+			},
+			{
+				"index": 18,
+				"type": 0,
+				"name": "256 scale",
+				"description": "use 0-255 instead of 0.0-1.0",
+				"value": 0
+			},
+			{
+				"index": 19,
+				"type": 1,
+				"name": "Color",
+				"description": "rec 601 or rec 709",
+				"value": 0
+			},
+			{
+				"index": 20,
+				"type": 1,
+				"name": "Crosshair color",
+				"description": "Color of the profile marker",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 58,
+		"id": "nervous",
+		"name": "Nervous",
+		"description": "flushes frames in time in a nervous way",
+		"colorModel": 0,
+		"params": []
+	},
+	{
+		"index": 59,
+		"id": "normaliz0r",
+		"name": "Normaliz0r",
+		"description": "Normalize (aka histogram stretch, contrast stretch)",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 2,
+				"name": "BlackPt",
+				"description": "Output color to which darkest input color is mapped (default black)",
+				"value": [0, 0, 0]
+			},
+			{
+				"index": 1,
+				"type": 2,
+				"name": "WhitePt",
+				"description": "Output color to which brightest input color is mapped (default white)",
+				"value": [1, 1, 1]
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "Smoothing",
+				"description": "Amount of temporal smoothing of the input range, to reduce flicker (default 0.0)",
+				"value": 0
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "Independence",
+				"description": "Proportion of independent to linked channel normalization (default 1.0)",
+				"value": 1
+			},
+			{
+				"index": 4,
+				"type": 1,
+				"name": "Strength",
+				"description": "Strength of filter, from no effect to full normalization (default 1.0)",
+				"value": 1
+			}
+		]
+	},
+	{
+		"index": 60,
+		"id": "nosync0r",
+		"name": "nosync0r",
+		"description": "broken tv",
+		"colorModel": 0,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "HSync",
+				"description": "the hsync offset",
+				"value": 0
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "VSync",
+				"description": "the vsync offset",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 61,
+		"id": "ntsc",
+		"name": "NTSC",
+		"description": "Simulates NTSC analog video.",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Signal Noise",
+				"description": "Amount of noise introduced into the NTSC signal.",
+				"value": 0
+			},
+			{
+				"index": 1,
+				"type": 0,
+				"name": "Progressive Scan",
+				"description": "Toggles progressive scan (Interlaced if off).",
+				"value": 0
+			},
+			{
+				"index": 2,
+				"type": 0,
+				"name": "Scanlines",
+				"description": "Draw borders between scanlines.",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 62,
+		"id": "perspective",
+		"name": "Perspective",
+		"description": "Distorts the image for a pseudo perspective",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 3,
+				"name": "Top Left",
+				"description": "",
+				"value": [0, 0]
+			},
+			{
+				"index": 1,
+				"type": 3,
+				"name": "Top Right",
+				"description": "",
+				"value": [1, 0]
+			},
+			{
+				"index": 2,
+				"type": 3,
+				"name": "Bottom Left",
+				"description": "",
+				"value": [0, 1]
+			},
+			{
+				"index": 3,
+				"type": 3,
+				"name": "Bottom Right",
+				"description": "",
+				"value": [1, 1]
+			}
+		]
+	},
+	{
+		"index": 63,
+		"id": "pixels0rt",
+		"name": "pixels0rt",
+		"description": "Pixel sorting effect",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Threshold",
+				"description": "Relative size of the line that will be sorted",
+				"value": 0.30000001192092896
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "Direction",
+				"description": "Sorting direction",
+				"value": 0
+			},
+			{
+				"index": 2,
+				"type": 0,
+				"name": "Reversed",
+				"description": "Should be pixels sorted in reversed order",
+				"value": 0
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "Transparency threshold",
+				"description": "What transparency level should be bypassed by the filter. 0 processes all pixels, 1 ignores all transparent pixels",
+				"value": 1
+			}
+		]
+	},
+	{
+		"index": 64,
+		"id": "premultiply",
+		"name": "Premultiply or Unpremultiply",
+		"description": "Multiply (or divide) each color component by the pixel's alpha value",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 0,
+				"name": "unpremultiply",
+				"description": "Whether to unpremultiply instead",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 65,
+		"id": "primaries",
+		"name": "primaries",
+		"description": "Reduce image to primary colors",
+		"colorModel": 0,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Factor",
+				"description": "influence of mean px value. > 32 = 0",
+				"value": 1
+			}
+		]
+	},
+	{
+		"index": 66,
+		"id": "rgbnoise",
+		"name": "rgbnoise",
+		"description": "Adds RGB noise to image.",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "noise",
+				"description": "Amount of noise added",
+				"value": 0.2
+			}
+		]
+	},
+	{
+		"index": 67,
+		"id": "scanline0r",
+		"name": "scanline0r",
+		"description": "interlaced dark lines",
+		"colorModel": 0,
+		"params": []
+	},
+	{
+		"index": 68,
+		"id": "select0r",
+		"name": "select0r",
+		"description": "Color based alpha selection",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 2,
+				"name": "Color to select",
+				"description": "",
+				"value": [0, 0.800000011920929, 0]
+			},
+			{
+				"index": 1,
+				"type": 0,
+				"name": "Invert selection",
+				"description": "",
+				"value": 0
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "Delta R / A / Hue",
+				"description": "",
+				"value": 0.20000000298023224
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "Delta G / B / Chroma",
+				"description": "",
+				"value": 0.20000000298023224
+			},
+			{
+				"index": 4,
+				"type": 1,
+				"name": "Delta B / I / I",
+				"description": "",
+				"value": 0.20000000298023224
+			},
+			{
+				"index": 5,
+				"type": 1,
+				"name": "Slope",
+				"description": "",
+				"value": 0
+			},
+			{
+				"index": 6,
+				"type": 1,
+				"name": "Selection subspace",
+				"description": "",
+				"value": 0
+			},
+			{
+				"index": 7,
+				"type": 1,
+				"name": "Subspace shape",
+				"description": "",
+				"value": 0
+			},
+			{
+				"index": 8,
+				"type": 1,
+				"name": "Edge mode",
+				"description": "",
+				"value": 0
+			},
+			{
+				"index": 9,
+				"type": 1,
+				"name": "Operation",
+				"description": "",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 69,
+		"id": "sharpness",
+		"name": "Sharpness",
+		"description": "Unsharp masking (port from Mplayer)",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Amount",
+				"description": "",
+				"value": 0.30000001192092896
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "Size",
+				"description": "",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 70,
+		"id": "sigmoidaltransfer",
+		"name": "sigmoidaltransfer",
+		"description": "Desaturates image and creates a particular look that could be called Stamp, Newspaper or Photocopy",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "base",
+				"description": "Brightness of image. Midpoint of sigmoidal curve",
+				"value": 0.5
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "sharpness",
+				"description": "Sharpness of transfer",
+				"value": 0.6
+			}
+		]
+	},
+	{
+		"index": 71,
+		"id": "sobel",
+		"name": "Sobel",
+		"description": "Sobel filter",
+		"colorModel": 1,
+		"params": []
+	},
+	{
+		"index": 72,
+		"id": "softglow",
+		"name": "softglow",
+		"description": "Does softglow effect on highlights",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "blur",
+				"description": "Blur of the glow",
+				"value": 0.5
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "brightness",
+				"description": "Brightness of highlight areas",
+				"value": 0.75
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "sharpness",
+				"description": "Sharpness of highlight areas",
+				"value": 0.85
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "blurblend",
+				"description": "Blend mode used to blend highlight blur with input image",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 73,
+		"id": "sopsat",
+		"name": "SOP/Sat",
+		"description": "Slope/Offset/Power and Saturation color corrections according to the ASC CDL (Color Decision List)",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "rSlope",
+				"description": "Slope of the red color component",
+				"value": 0.05
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "gSlope",
+				"description": "Slope of the green color component",
+				"value": 0.05
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "bSlope",
+				"description": "Slope of the blue color component",
+				"value": 0.05
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "aSlope",
+				"description": "Slope of the alpha component",
+				"value": 0.05
+			},
+			{
+				"index": 4,
+				"type": 1,
+				"name": "rOffset",
+				"description": "Offset of the red color component",
+				"value": 0.5
+			},
+			{
+				"index": 5,
+				"type": 1,
+				"name": "gOffset",
+				"description": "Offset of the green color component",
+				"value": 0.5
+			},
+			{
+				"index": 6,
+				"type": 1,
+				"name": "bOffset",
+				"description": "Offset of the blue color component",
+				"value": 0.5
+			},
+			{
+				"index": 7,
+				"type": 1,
+				"name": "aOffset",
+				"description": "Offset of the alpha component",
+				"value": 0.5
+			},
+			{
+				"index": 8,
+				"type": 1,
+				"name": "rPower",
+				"description": "Power (Gamma) of the red color component",
+				"value": 0.05
+			},
+			{
+				"index": 9,
+				"type": 1,
+				"name": "gPower",
+				"description": "Power (Gamma) of the green color component",
+				"value": 0.05
+			},
+			{
+				"index": 10,
+				"type": 1,
+				"name": "bPower",
+				"description": "Power (Gamma) of the blue color component",
+				"value": 0.05
+			},
+			{
+				"index": 11,
+				"type": 1,
+				"name": "aPower",
+				"description": "Power (Gamma) of the alpha component",
+				"value": 0.05
+			},
+			{
+				"index": 12,
+				"type": 1,
+				"name": "saturation",
+				"description": "Overall saturation",
+				"value": 0.1
+			}
+		]
+	},
+	{
+		"index": 74,
+		"id": "spillsupress",
+		"name": "spillsupress",
+		"description": "Remove green or blue spill light from subjects shot in front of green or blue screen",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "supresstype",
+				"description": "Defines if green or blue screen spill suppress is applied",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 75,
+		"id": "squareblur",
+		"name": "Squareblur",
+		"description": "Variable-size square blur",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Kernel size",
+				"description": "The size of the kernel, as a proportion to its coverage of the image",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 76,
+		"id": "squigglevision",
+		"name": "squigglevision",
+		"description": "Hand-drawn wobble via time-quantized noise displacement",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Strength",
+				"description": "Displacement amount, normalized 0..1 mapped to 0..100 percent (8 percent is a moderate default).",
+				"value": 0.08
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "FPS",
+				"description": "Squiggle updates per second, normalized 0..1 mapped to 0..30 fps (0 = frozen; 6 fps is a moderate default).",
+				"value": 0.2
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "Scale",
+				"description": "Noise cell size, normalized 0..1 mapped to 4..128 px (about 23 px is a moderate default).",
+				"value": 0.15
+			}
+		]
+	},
+	{
+		"index": 77,
+		"id": "tehroxx0r",
+		"name": "TehRoxx0r",
+		"description": "Something videowall-ish",
+		"colorModel": 2,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Interval",
+				"description": "Changing speed of small blocks",
+				"value": 0.01
+			}
+		]
+	},
+	{
+		"index": 78,
+		"id": "three_point_balance",
+		"name": "3 point color balance",
+		"description": "Adjust color balance with 3 color points",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 2,
+				"name": "Black color",
+				"description": "Black color",
+				"value": [0, 0, 0]
+			},
+			{
+				"index": 1,
+				"type": 2,
+				"name": "Gray color",
+				"description": "Gray color",
+				"value": [0.5, 0.5, 0.5]
+			},
+			{
+				"index": 2,
+				"type": 2,
+				"name": "White color",
+				"description": "White color",
+				"value": [1, 1, 1]
+			},
+			{
+				"index": 3,
+				"type": 0,
+				"name": "Split preview",
+				"description": "Split privew",
+				"value": 1
+			},
+			{
+				"index": 4,
+				"type": 0,
+				"name": "Source image on left side",
+				"description": "Source image on left side",
+				"value": 1
+			}
+		]
+	},
+	{
+		"index": 79,
+		"id": "threelay0r",
+		"name": "threelay0r",
+		"description": "dynamic 3 level thresholding",
+		"colorModel": 0,
+		"params": []
+	},
+	{
+		"index": 80,
+		"id": "timeout",
+		"name": "Timeout indicator",
+		"description": "Timeout indicators e.g. for slides.",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "time",
+				"description": "Current time",
+				"value": 0
+			},
+			{
+				"index": 1,
+				"type": 2,
+				"name": "color",
+				"description": "Indicator colour",
+				"value": [0, 0, 0]
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "transparency",
+				"description": "Indicator transparency",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 81,
+		"id": "transparency",
+		"name": "Transparency",
+		"description": "Tunes the alpha channel.",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "Transparency",
+				"description": "The transparency value",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 82,
+		"id": "tutorial",
+		"name": "Tutorial filter",
+		"description": "This is an example filter, kind of a quick howto showing how to add a frei0r filter.",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "barSize",
+				"description": "Size of the black bar",
+				"value": 0.1
+			},
+			{
+				"index": 1,
+				"type": 0,
+				"name": "pointerMethod",
+				"description": "Pointer Method (internal)",
+				"value": 0
+			}
+		]
+	},
+	{
+		"index": 83,
+		"id": "twolay0r",
+		"name": "Twolay0r",
+		"description": "dynamic thresholding",
+		"colorModel": 0,
+		"params": []
+	},
+	{
+		"index": 84,
+		"id": "vignette",
+		"name": "Vignette",
+		"description": "Lens vignetting effect, applies natural vignetting",
+		"colorModel": 1,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "aspect",
+				"description": "Aspect ratio",
+				"value": 0.5
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "clearCenter",
+				"description": "Size of the unaffected center",
+				"value": 0
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "soft",
+				"description": "Softness",
+				"value": 0.6
+			}
+		]
+	},
+	{
+		"index": 85,
+		"id": "water",
+		"name": "Water",
+		"description": "water drops on a video surface",
+		"colorModel": 0,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "physics",
+				"description": "water density: from 0.0 to 1.0",
+				"value": 1
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "swirl",
+				"description": "swirling whirpool in the center",
+				"value": 1
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "rain",
+				"description": "rain drops all over",
+				"value": 0
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "surfer",
+				"description": "surf the surface with a wandering finger",
+				"value": 0
+			},
+			{
+				"index": 4,
+				"type": 1,
+				"name": "smooth",
+				"description": "smooth up all perturbations on the surface",
+				"value": 0
+			},
+			{
+				"index": 5,
+				"type": 1,
+				"name": "distort",
+				"description": "distort all surface like dropping a bucket to the floor",
+				"value": 0
+			},
+			{
+				"index": 6,
+				"type": 3,
+				"name": "position",
+				"description": "swirl position coordinate, Relative center coordinate",
+				"value": [0, 0]
+			}
+		]
+	},
+	{
+		"index": 86,
+		"id": "3dperspective",
+		"name": "3D Perspective",
+		"description": "Simulated 3D plane rotation (yaw/pitch/roll) with adjustable perspective and position, like a fake-3D camera transform.",
+		"colorModel": 0,
+		"params": [
+			{
+				"index": 0,
+				"type": 1,
+				"name": "yaw",
+				"description": "Rotation around vertical axis (left/right turn). Normalized 0..1 maps to -180..180 degrees (0.5 = 0 deg)",
+				"value": 0.5
+			},
+			{
+				"index": 1,
+				"type": 1,
+				"name": "pitch",
+				"description": "Rotation around horizontal axis (tilt up/down). Normalized 0..1 maps to -90..90 degrees (0.5 = 0 deg)",
+				"value": 0.5
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "roll",
+				"description": "In-plane spin. Normalized 0..1 maps to -180..180 degrees (0.5 = 0 deg)",
+				"value": 0.5
+			},
+			{
+				"index": 3,
+				"type": 1,
+				"name": "perspective",
+				"description": "Strength of 3D perspective distortion (%)",
+				"value": 0.7
+			},
+			{
+				"index": 4,
+				"type": 1,
+				"name": "zoom",
+				"description": "Zoom compensation. Normalized 0..1 maps to 0.1x..4.0x scale",
+				"value": 0.25
+			},
+			{
+				"index": 5,
+				"type": 1,
+				"name": "x",
+				"description": "Horizontal position, 0..1 (0.5 = centered, no shift)",
+				"value": 0.5
+			},
+			{
+				"index": 6,
+				"type": 1,
+				"name": "y",
+				"description": "Vertical position, 0..1 (0.5 = centered, no shift)",
+				"value": 0.5
+			}
+		]
+	},
+	{
+		"index": 87,
+		"id": "tint0r",
+		"name": "Tint0r",
+		"description": "Tint a source image with specified colors",
+		"colorModel": 0,
+		"params": [
+			{
+				"index": 0,
+				"type": 2,
+				"name": "Map black to",
+				"description": "The color to map source color with null luminance",
+				"value": [0, 0, 0]
+			},
+			{
+				"index": 1,
+				"type": 2,
+				"name": "Map white to",
+				"description": "The color to map source color with full luminance",
+				"value": [0.5, 1, 0.5]
+			},
+			{
+				"index": 2,
+				"type": 1,
+				"name": "Tint amount",
+				"description": "Amount of color",
+				"value": 0.25
+			}
+		]
+	}
+]

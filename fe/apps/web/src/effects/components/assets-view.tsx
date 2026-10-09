@@ -53,6 +53,8 @@ export function EffectsView() {
 				>
 					{[
 						"All effects",
+						"PixiJS",
+						"frei0r",
 						"Color presets",
 						"Lighting",
 						"Retro",
@@ -116,12 +118,23 @@ function EffectPreviewCanvas({ effectType }: { effectType: string }) {
 			}
 		};
 
-		void initializeGpuRenderer().then(render);
-		const unsubscribe = effectPreviewService.onPreviewImageReady({
-			callback: render,
-		});
+		const canvas = canvasRef.current;
+		let unsubscribe = () => {};
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (!entries.some((entry) => entry.isIntersecting)) return;
+				observer.disconnect();
+				void initializeGpuRenderer().then(render);
+				unsubscribe = effectPreviewService.onPreviewImageReady({
+					callback: render,
+				});
+			},
+			{ rootMargin: "100px" },
+		);
+		if (canvas) observer.observe(canvas);
 		return () => {
 			mounted = false;
+			observer.disconnect();
 			unsubscribe();
 		};
 	}, [effectType]);

@@ -1,3 +1,8 @@
+import { transitionProgress } from "opencut-wasm";
+import { mediaTimeToSeconds, roundMediaTime } from "@/wasm";
+import { VisualNode } from "../nodes/visual-node";
+import { rasterizeDescriptor } from "../external/composite";
+import { renderGlTransition } from "../external/transitions";
 import { drawCssBackground } from "@/gradients";
 import { getMaskDefinition } from "@/masks";
 import { incrementCounter } from "@/diagnostics/render-perf";
@@ -78,7 +83,15 @@ async function collectNode({
 	textures: Map<string, TextureUploadDescriptor>;
 }): Promise<void> {
 	if (node instanceof RootNode) {
+		const suppressed = new Set(
+			node.children
+				.filter(
+					(child) => child instanceof VisualNode && activeTransition(child),
+				)
+				.map((child) => (child as VisualNode).transition!.from),
+		);
 		for (let index = 0; index < node.children.length; index++) {
+			if (suppressed.has(node.children[index] as VisualNode)) continue;
 			await collectNode({
 				node: node.children[index],
 				renderer,
@@ -206,6 +219,7 @@ async function collectNode({
 }
 
 async function collectVisualSourceNode({
+	skipTransition = false,
 	node,
 	renderer,
 	path,
@@ -213,6 +227,7 @@ async function collectVisualSourceNode({
 	textures,
 }: {
 	node: VideoNode | ImageNode | StickerNode | GraphicNode;
+	skipTransition?: boolean;
 	renderer: CanvasRenderer;
 	path: string;
 	items: FrameItemDescriptor[];
@@ -220,6 +235,71 @@ async function collectVisualSourceNode({
 }) {
 	if (!node.resolved) {
 		return;
+	}
+
+	if (!skipTransition && activeTransition(node)) {
+		const transition = node.transition!;
+		const from = transition.from;
+		if (from instanceof VideoNode || from instanceof ImageNode) {
+			const rasterize = async (
+				clip: VideoNode | ImageNode | StickerNode | GraphicNode,
+				key: string,
+			) => {
+				const parts: FrameItemDescriptor[] = [];
+				await collectVisualSourceNode({
+					node: clip,
+					renderer,
+					path: key,
+					items: parts,
+					textures,
+					skipTransition: true,
+				});
+				return rasterizeDescriptor(
+					{
+						width: renderer.width,
+						height: renderer.height,
+						clear: { color: [0, 0, 0, 0] },
+						items: parts,
+					},
+					[...textures.values()],
+					mediaTimeToSeconds({
+						time: roundMediaTime({ time: node.resolved!.localTime }),
+					}),
+				);
+			};
+			const a = await rasterize(from, `${path}:transition-from`);
+			const b = await rasterize(node, `${path}:transition-to`);
+			const progress = transitionProgress(
+				BigInt(Math.round(node.resolved.localTime)),
+				BigInt(Math.round(transition.duration)),
+			);
+			const output = renderGlTransition(
+				a,
+				b,
+				transition.name,
+				progress,
+				renderer.width,
+				renderer.height,
+			);
+			const id = `${path}:transition`;
+			textures.set(id, {
+				kind: "external",
+				id,
+				source: output,
+				width: renderer.width,
+				height: renderer.height,
+			});
+			items.push({
+				type: "layer",
+				textureId: id,
+				transform: fullCanvasTransform(renderer),
+				opacity: 1,
+				blendMode: "normal",
+				effectPassGroups: [],
+				mask: null,
+			});
+			return;
+		}
 	}
 
 	const source =
@@ -578,4 +658,14 @@ function identityKey(source: CanvasImageSource): string {
 		return `@${key}`;
 	}
 	return "@?";
+}
+
+function activeTransition(node: VisualNode): boolean {
+	if (!node.transition || !node.resolved || !node.transition.from.resolved)
+		return false;
+	const progress = transitionProgress(
+		BigInt(Math.round(node.resolved.localTime)),
+		BigInt(Math.round(node.transition.duration)),
+	);
+	return progress >= 0;
 }

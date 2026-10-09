@@ -1,18 +1,20 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
+export const initializeGpu: () => any;
+export const buildFadeKeyframes: (a: bigint, b: bigint, c: number, d: number, e: number) => any;
+export const getLastFrameProfile: () => any;
 export const applyEffectPasses: (a: any) => [number, number, number];
+export const applyMaskFeather: (a: any) => [number, number, number];
 export const getCompositorCanvas: () => [number, number, number];
 export const initCompositor: (a: number, b: number) => [number, number];
-export const initializeGpu: () => any;
 export const releaseTexture: (a: number, b: number) => [number, number];
 export const renderFrame: (a: any) => [number, number];
 export const resizeCompositor: (a: number, b: number) => [number, number];
-export const uploadTexture: (a: any) => [number, number];
-export const buildFadeKeyframes: (a: bigint, b: bigint, c: number, d: number, e: number) => any;
-export const applyMaskFeather: (a: any) => [number, number, number];
 export const splitShortSubtitles: (a: any) => [number, number, number];
-export const getLastFrameProfile: () => any;
+export const transitionDuration: (a: bigint, b: bigint, c: bigint) => bigint;
+export const transitionProgress: (a: bigint, b: bigint) => number;
+export const uploadTexture: (a: any) => [number, number];
 export const TICKS_PER_SECOND: () => number;
 export const floorToFrame: (a: any) => any;
 export const isFrameAligned: (a: any) => number;

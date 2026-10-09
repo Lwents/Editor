@@ -1,0 +1,3 @@
+pixi-filters 6.1.5 — https://github.com/pixijs/filters — MIT (LICENSE.txt)
+pixi.js 8.16.0 — https://github.com/pixijs/pixijs — MIT (PIXI-LICENSE.txt)
+38 exported filter classes integrated. Texture-dependent filters use built-in default LUT/light/displacement resources.

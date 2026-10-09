@@ -34,4 +34,6 @@ export interface ResolvedVisualSourceNodeState extends ResolvedVisualNodeState {
 export abstract class VisualNode<
 	Params extends VisualNodeParams = VisualNodeParams,
 	Resolved extends ResolvedVisualNodeState = ResolvedVisualNodeState,
-> extends BaseNode<Params, Resolved> {}
+> extends BaseNode<Params, Resolved> {
+	transition?: { from: VisualNode; name: string; duration: number };
+}

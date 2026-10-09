@@ -12,6 +12,20 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 export const vietnamese: Record<string, string> = {
+	"Choose the incoming clip. The two clips overlap for the transition duration; later clips on this track move with it.":
+		"Chọn đoạn nhận chuyển cảnh. Hai đoạn chồng lên nhau trong thời gian chuyển cảnh; các đoạn sau trên hàng này cũng được dịch theo.",
+	"Incoming clip": "Đoạn nhận chuyển cảnh",
+	"Search transitions": "Tìm chuyển cảnh",
+	"Apply transition": "Áp dụng chuyển cảnh",
+	"Remove transition": "Xóa chuyển cảnh",
+	"Current transition": "Chuyển cảnh hiện tại",
+	"Transition applied": "Đã áp dụng chuyển cảnh",
+	"Transition removed": "Đã xóa chuyển cảnh",
+	"Place two adjacent clips on the same track first":
+		"Đặt hai đoạn liền nhau trên cùng hàng timeline trước",
+	"Add at least two video or image clips to the same track":
+		"Thêm ít nhất hai đoạn video hoặc ảnh vào cùng hàng timeline",
+
 	"Toggle effect": "Bật/tắt",
 	"Remove effect": "Xóa",
 	Cinematic: "Màu điện ảnh",

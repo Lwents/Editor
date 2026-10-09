@@ -1,0 +1,9 @@
+frei0r — GPL-2.0; see COPYING.
+Source: https://github.com/dyne/frei0r
+Revision: 618dde79716fab4e428a05e6476325b9e6f5b063
+This distribution contains the 88-filter browser manifest, not the native generators/mixers or plugins requiring OpenCV/GAVL/Cairo.
+Modification: FREI0R_DEMO_MAX_PIXELS raised to 4096 * 4096; dimensions are padded to multiples of eight by the browser host.
+Modification: HEAPU8 explicitly exported for compatibility with Emscripten 4.0.20.
+Exact corresponding source (including this modification): source.tar.gz in this directory.
+Rebuild: scripts/build-frei0r.sh, Emscripten 4.0.20, CMake and Ninja.
+The runtime is loaded as a separate JavaScript/WebAssembly module.

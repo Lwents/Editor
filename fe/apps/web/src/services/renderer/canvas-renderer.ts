@@ -1,3 +1,4 @@
+import { mediaTimeToSeconds, roundMediaTime } from "@/wasm";
 import type { FrameRate } from "opencut-wasm";
 import type { AnyBaseNode } from "./nodes/base-node";
 import { createCanvasSurface } from "./canvas-utils";
@@ -9,6 +10,10 @@ import {
 	measureSpanSync,
 	onRenderPerfFrameComplete,
 } from "@/diagnostics/render-perf";
+
+import { renderExternalItems } from "./external/composite";
+
+let renderQueue: Promise<unknown> = Promise.resolve();
 
 export type CanvasRendererParams = {
 	width: number;
@@ -50,15 +55,32 @@ export class CanvasRenderer {
 		this.context = surface.context;
 	}
 
-	async render({ node, time }: { node: AnyBaseNode; time: number }) {
+	render({ node, time }: { node: AnyBaseNode; time: number }): Promise<void> {
+		const task = renderQueue.then(() => this.renderFrame({ node, time }));
+		renderQueue = task.catch(() => undefined);
+		return task;
+	}
+
+	private async renderFrame({
+		node,
+		time,
+	}: {
+		node: AnyBaseNode;
+		time: number;
+	}) {
 		await measureSpanAsync({
 			name: "resolve",
 			fn: () => resolveRenderTree({ node, renderer: this, time }),
 		});
-		const { frame, textures } = await measureSpanAsync({
+		let { frame, textures } = await measureSpanAsync({
 			name: "buildFrame",
 			fn: () => buildFrameDescriptor({ node, renderer: this }),
 		});
+		({ frame, textures } = await renderExternalItems(
+			frame,
+			textures,
+			mediaTimeToSeconds({ time: roundMediaTime({ time }) }),
+		));
 		wasmCompositor.ensureInitialized({
 			width: this.width,
 			height: this.height,

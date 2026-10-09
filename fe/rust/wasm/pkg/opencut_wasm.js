@@ -5,5 +5,5 @@ import { __wbg_set_wasm } from "./opencut_wasm_bg.js";
 __wbg_set_wasm(wasm);
 wasm.__wbindgen_start();
 export {
-    TICKS_PER_SECOND, applyEffectPasses, applyMaskFeather, buildFadeKeyframes, floorToFrame, formatTimecode, getCompositorCanvas, getLastFrameProfile, guessTimecodeFormat, initCompositor, initializeGpu, isFrameAligned, lastFrameTime, mediaTimeAdd, mediaTimeClamp, mediaTimeFromFrame, mediaTimeFromSeconds, mediaTimeMax, mediaTimeMin, mediaTimeSub, mediaTimeToFrame, mediaTimeToSeconds, parseTimecode, releaseTexture, renderFrame, resizeCompositor, roundToFrame, snappedSeekTime, splitShortSubtitles, uploadTexture
+    TICKS_PER_SECOND, applyEffectPasses, applyMaskFeather, buildFadeKeyframes, floorToFrame, formatTimecode, getCompositorCanvas, getLastFrameProfile, guessTimecodeFormat, initCompositor, initializeGpu, isFrameAligned, lastFrameTime, mediaTimeAdd, mediaTimeClamp, mediaTimeFromFrame, mediaTimeFromSeconds, mediaTimeMax, mediaTimeMin, mediaTimeSub, mediaTimeToFrame, mediaTimeToSeconds, parseTimecode, releaseTexture, renderFrame, resizeCompositor, roundToFrame, snappedSeekTime, splitShortSubtitles, transitionDuration, transitionProgress, uploadTexture
 } from "./opencut_wasm_bg.js";

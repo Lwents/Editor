@@ -9,6 +9,7 @@ import { GraphicNode } from "./nodes/graphic-node";
 import { ColorNode } from "./nodes/color-node";
 import { BlurBackgroundNode } from "./nodes/blur-background-node";
 import { EffectLayerNode } from "./nodes/effect-layer-node";
+import { VisualNode } from "./nodes/visual-node";
 import type { AnyBaseNode } from "./nodes/base-node";
 import type { TBackground, TCanvasSize } from "@/project/types";
 import { DEFAULT_BACKGROUND_BLUR_INTENSITY } from "@/background/blur";
@@ -45,8 +46,10 @@ function buildTrackNodes({
 
 	for (const track of tracks) {
 		const elements = getVisibleSortedElements({ track });
+		const trackNodes = new Map<string, VisualNode>();
 
 		for (const element of elements) {
+			const previousCount = nodes.length;
 			if (element.type === "effect") {
 				nodes.push(
 					new EffectLayerNode({
@@ -159,6 +162,18 @@ function buildTrackNodes({
 					}),
 				);
 			}
+			const added =
+				nodes.length > previousCount ? nodes[nodes.length - 1] : undefined;
+			if (added instanceof VisualNode) {
+				trackNodes.set(element.id, added);
+				const fromId = element.params["transition.fromId"];
+				const from =
+					typeof fromId === "string" ? trackNodes.get(fromId) : undefined;
+				const name = element.params["transition.name"];
+				const duration = Number(element.params["transition.duration"] ?? 0);
+				if (from && typeof name === "string" && name && duration > 0)
+					added.transition = { from, name, duration };
+			}
 		}
 	}
 
@@ -180,6 +195,7 @@ function buildBlurBackgroundNodes({
 
 	const nodes: AnyBaseNode[] = [];
 	const elements = getVisibleSortedElements({ track });
+	const trackNodes = new Map<string, VisualNode>();
 
 	for (const element of elements) {
 		if (element.type !== "video" && element.type !== "image") {

@@ -17,6 +17,8 @@ import { isVisualElement } from "@/timeline/element-utils";
 import { mediaTimeFromSeconds, mediaTime } from "@/wasm";
 import type { ScalarAnimationChannel } from "@/animation/types";
 
+import { GlTransitionsPanel } from "./gl-transitions";
+
 export function TransitionsView() {
 	const editor = useEditor();
 	const t = useUiLanguage();
@@ -142,6 +144,7 @@ export function TransitionsView() {
 				<p className="text-xs text-muted-foreground">
 					{t("Fades change the opacity at the clip edges. Audio is unchanged.")}
 				</p>
+				<GlTransitionsPanel seconds={seconds} />
 			</div>
 		</PanelView>
 	);

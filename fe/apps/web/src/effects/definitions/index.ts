@@ -5,7 +5,10 @@ import { colorAdjustmentDefinition } from "./color-adjustment";
 
 import { stylizeDefinitions } from "./stylize";
 
+import { externalDefinitions } from "./external";
+
 const defaultEffects = [
+	...externalDefinitions,
 	blurEffectDefinition,
 	colorAdjustmentDefinition,
 	...stylizeDefinitions,

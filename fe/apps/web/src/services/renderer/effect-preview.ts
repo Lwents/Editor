@@ -4,6 +4,8 @@ import { buildDefaultParamValues } from "@/params/registry";
 import type { ParamValues } from "@/params";
 import { gpuRenderer } from "./gpu-renderer";
 
+import { applyExternalPass, isExternalPass } from "./external/effects";
+
 const PREVIEW_SIZE = 160;
 const PREVIEW_IMAGE_PATH = "/effects/preview.jpg";
 
@@ -23,7 +25,7 @@ class EffectPreviewService {
 		return () => this.onReadyCallbacks.delete(callback);
 	}
 
-	renderPreview({
+	async renderPreview({
 		effectType,
 		params,
 		targetCanvas,
@@ -33,7 +35,7 @@ class EffectPreviewService {
 		params: ParamValues;
 		targetCanvas: HTMLCanvasElement;
 		uniformDimensions?: { width: number; height: number };
-	}): void {
+	}): Promise<void> {
 		const size = PREVIEW_SIZE;
 		const targetCtx = targetCanvas.getContext(
 			"2d",
@@ -64,12 +66,17 @@ class EffectPreviewService {
 				width: uniformDimensions?.width ?? size,
 				height: uniformDimensions?.height ?? size,
 			});
-			const result = this.applyGpuEffect({
-				source,
-				width: size,
-				height: size,
-				passes,
-			});
+			let result = source;
+			for (const pass of passes) {
+				result = isExternalPass(pass)
+					? await applyExternalPass(result, pass, 0.35)
+					: this.applyGpuEffect({
+							source: result,
+							width: size,
+							height: size,
+							passes: [pass],
+						});
+			}
 
 			targetCtx.drawImage(result, 0, 0, size, size);
 		} catch (error) {

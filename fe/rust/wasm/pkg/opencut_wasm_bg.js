@@ -285,6 +285,27 @@ export function splitShortSubtitles(options) {
 }
 
 /**
+ * @param {bigint} requested
+ * @param {bigint} from_duration
+ * @param {bigint} to_duration
+ * @returns {bigint}
+ */
+export function transitionDuration(requested, from_duration, to_duration) {
+    const ret = wasm.transitionDuration(requested, from_duration, to_duration);
+    return ret;
+}
+
+/**
+ * @param {bigint} local_time
+ * @param {bigint} duration
+ * @returns {number}
+ */
+export function transitionProgress(local_time, duration) {
+    const ret = wasm.transitionProgress(local_time, duration);
+    return ret;
+}
+
+/**
  * @param {any} options
  */
 export function uploadTexture(options) {

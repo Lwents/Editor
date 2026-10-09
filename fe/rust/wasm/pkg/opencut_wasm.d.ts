@@ -154,4 +154,8 @@ export function snappedSeekTime(arg0: SnappedSeekTimeOptions): MediaTime | undef
 
 export function splitShortSubtitles(options: any): any;
 
+export function transitionDuration(requested: bigint, from_duration: bigint, to_duration: bigint): bigint;
+
+export function transitionProgress(local_time: bigint, duration: bigint): number;
+
 export function uploadTexture(options: any): void;

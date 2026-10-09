@@ -1,0 +1,4 @@
+GL Transitions 1.71.0 — https://github.com/gl-transitions/gl-transitions
+125 transition shaders. Source, author credits and per-shader license headers: source.json.
+123 MIT shaders; InvertedPageCurl: BSD 3 Clause; StereoViewer: BSD 2 Clause.
+The complete BSD copyright notices and terms are retained in source.json.

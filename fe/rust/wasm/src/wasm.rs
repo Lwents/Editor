@@ -26,3 +26,6 @@ pub use fades::*;
 
 mod short_subtitles;
 pub use short_subtitles::*;
+
+mod transitions;
+pub use transitions::*;

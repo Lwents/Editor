@@ -19,7 +19,10 @@ pub use timecode::{
 };
 
 mod fades;
-pub use fades::{fade_points, FadePoint};
+pub use fades::{FadePoint, fade_points};
 
 mod short_subtitles;
-pub use short_subtitles::{short_subtitles, ShortSubtitleOptions, ShortSubtitle};
+pub use short_subtitles::{ShortSubtitle, ShortSubtitleOptions, short_subtitles};
+
+mod transitions;
+pub use transitions::{transition_duration, transition_progress};
