@@ -14,6 +14,9 @@ import { toast } from "sonner";
 
 function Thumbnail({ name }: { name: string }) {
 	const ref = useRef<HTMLCanvasElement>(null);
+	const hovering = useRef(false);
+	const draw = useRef<(progress: number) => void>(() => {});
+	const frame = useRef(0);
 	useEffect(() => {
 		const canvas = ref.current;
 		if (!canvas) return;
@@ -41,9 +44,15 @@ function Thumbnail({ name }: { name: string }) {
 					y.fillText("B", 60, 66);
 					canvas.width = 160;
 					canvas.height = 100;
-					canvas
-						.getContext("2d")!
-						.drawImage(renderGlTransition(a, b, name, 0.5, 160, 100), 0, 0);
+					draw.current = (progress) =>
+						canvas
+							.getContext("2d")!
+							.drawImage(
+								renderGlTransition(a, b, name, progress, 160, 100),
+								0,
+								0,
+							);
+					draw.current(0.5);
 				} catch (e) {
 					console.error(`Transition ${name}`, e);
 				}
@@ -51,9 +60,32 @@ function Thumbnail({ name }: { name: string }) {
 			{ rootMargin: "100px" },
 		);
 		observer.observe(canvas);
-		return () => observer.disconnect();
+		return () => {
+			observer.disconnect();
+			cancelAnimationFrame(frame.current);
+		};
 	}, [name]);
-	return <canvas ref={ref} className="w-full rounded-md" />;
+	return (
+		<canvas
+			ref={ref}
+			className="w-full rounded-md"
+			onMouseEnter={() => {
+				hovering.current = true;
+				const start = performance.now();
+				const animate = (now: number) => {
+					if (!hovering.current) return;
+					draw.current(((now - start) % 1800) / 1800);
+					frame.current = requestAnimationFrame(animate);
+				};
+				frame.current = requestAnimationFrame(animate);
+			}}
+			onMouseLeave={() => {
+				hovering.current = false;
+				cancelAnimationFrame(frame.current);
+				draw.current(0.5);
+			}}
+		/>
+	);
 }
 export function GlTransitionsPanel({ seconds }: { seconds: number }) {
 	const editor = useEditor(),
@@ -81,13 +113,17 @@ export function GlTransitionsPanel({ seconds }: { seconds: number }) {
 		pairs.find((pair) =>
 			selectedElements.some((ref) => ref.elementId === pair.from.id),
 		);
-	const pair = pairs.find((p) => p.to.id === choice) ?? selectedPair;
+	const pair =
+		pairs.find((p) => p.to.id === choice) ?? selectedPair ?? pairs[0];
 	const filtered = glTransitions.filter((entry) =>
 		entry.name.toLowerCase().includes(search.toLowerCase()),
 	);
 	const displayed = filtered.slice(page * 24, (page + 1) * 24);
 	function apply(name: string) {
-		if (!pair) return;
+		if (!pair) {
+			toast.info(t("Add at least two video or image clips to the same track"));
+			return;
+		}
 		const { track, from, to } = pair;
 		const old = Number(to.params["transition.duration"] ?? 0);
 		const expected = from.startTime + from.duration - old;
@@ -135,6 +171,9 @@ export function GlTransitionsPanel({ seconds }: { seconds: number }) {
 	return (
 		<section className="space-y-3 border-t pt-4">
 			<h3 className="font-semibold">GL Transitions · {glTransitions.length}</h3>
+			<p className="text-xs text-muted-foreground">
+				{t("Hover to preview. Click to apply between two adjacent clips.")}
+			</p>
 			<p className="text-xs text-muted-foreground">
 				{t(
 					"Choose the incoming clip. The two clips overlap for the transition duration; later clips on this track move with it.",
@@ -189,7 +228,6 @@ export function GlTransitionsPanel({ seconds }: { seconds: number }) {
 					<button
 						key={entry.name}
 						className="rounded-lg border p-1.5 text-left disabled:opacity-50 hover:bg-accent"
-						disabled={!pair}
 						onClick={() => apply(entry.name)}
 						aria-label={`${t("Apply transition")} ${entry.name}`}
 					>

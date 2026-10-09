@@ -4,7 +4,10 @@ import { flagsProvider } from "./flags";
 import { logosProvider } from "./logos";
 import { shapesProvider } from "./shapes";
 
+import { fluentProvider } from "./fluent";
+
 const defaultProviders: StickerProvider[] = [
+	fluentProvider,
 	logosProvider,
 	flagsProvider,
 	shapesProvider,

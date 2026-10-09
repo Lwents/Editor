@@ -83,7 +83,7 @@ export function StickersView() {
 				<TabsList aria-label={uiTranslate("Sticker categories")}>
 					{Object.entries(STICKER_CATEGORIES).map(([key, label]) => (
 						<TabsTrigger key={key} value={key}>
-							{label}
+							{uiTranslate(label)}
 						</TabsTrigger>
 					))}
 				</TabsList>
@@ -102,6 +102,11 @@ function StickerGrid({
 	items: StickerData[];
 	shouldCapSize?: boolean;
 }) {
+	const t = useUiLanguage();
+	const [page, setPage] = useState(0);
+	useEffect(() => setPage(0), [items]);
+	const pages = Math.max(1, Math.ceil(items.length / 72));
+	const shown = items.slice(page * 72, (page + 1) * 72);
 	const gridStyle: CSSProperties & {
 		"--sticker-min": string;
 		"--sticker-max"?: string;
@@ -114,11 +119,40 @@ function StickerGrid({
 	};
 
 	return (
-		<div className="grid gap-2" style={gridStyle}>
-			{items.map((item) => (
-				<StickerItem key={item.id} item={item} shouldCapSize={shouldCapSize} />
-			))}
-		</div>
+		<>
+			<div className="grid gap-2" style={gridStyle}>
+				{shown.map((item) => (
+					<StickerItem
+						key={item.id}
+						item={item}
+						shouldCapSize={shouldCapSize}
+					/>
+				))}
+			</div>
+			{pages > 1 && (
+				<div className="flex items-center justify-between py-3">
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={!page}
+						onClick={() => setPage(page - 1)}
+					>
+						{t("Previous")}
+					</Button>
+					<span className="text-xs">
+						{page + 1} / {pages} · {items.length}
+					</span>
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={page + 1 >= pages}
+						onClick={() => setPage(page + 1)}
+					>
+						{t("Next")}
+					</Button>
+				</div>
+			)}
+		</>
 	);
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useCallback } from "react";
 import {
 	Select,
 	SelectTrigger,
@@ -12,6 +12,18 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 export const vietnamese: Record<string, string> = {
+	"Fit text inside canvas": "Tự co chữ vừa khung",
+	Previous: "Trước",
+	Emoji: "Biểu cảm",
+	"Text content": "Nội dung chữ",
+	"Text animation": "Chuyển động chữ",
+	"Search text templates": "Tìm mẫu chữ",
+	"Loading fonts...": "Đang tải font...",
+	"Could not load fonts": "Không tải được font chữ",
+	"Drag a template onto the timeline or press +. Edit text and style on the right.":
+		"Kéo mẫu xuống timeline hoặc bấm +. Sửa nội dung và kiểu chữ ở bảng bên phải.",
+	"Hover to preview. Click to apply between two adjacent clips.":
+		"Rê chuột để xem chuyển động. Bấm để áp dụng giữa hai đoạn liền nhau.",
 	"Choose the incoming clip. The two clips overlap for the transition duration; later clips on this track move with it.":
 		"Chọn đoạn nhận chuyển cảnh. Hai đoạn chồng lên nhau trong thời gian chuyển cảnh; các đoạn sau trên hàng này cũng được dịch theo.",
 	"Incoming clip": "Đoạn nhận chuyển cảnh",
@@ -332,8 +344,10 @@ export const useLanguageStore = create<{
 );
 export function useUiLanguage() {
 	const language = useLanguageStore((s) => s.language);
-	return (text: string) =>
-		language === "vi" ? (vietnamese[text] ?? text) : text;
+	return useCallback(
+		(text: string) => (language === "vi" ? (vietnamese[text] ?? text) : text),
+		[language],
+	);
 }
 export function UiText({ text }: { text: string }) {
 	const t = useUiLanguage();

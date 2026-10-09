@@ -387,7 +387,8 @@ export class DragDropController {
 		const element = buildTextElement({
 			raw: {
 				name: dragData.name ?? "",
-				params: { content: dragData.content ?? "" },
+				params: { ...dragData.params, content: dragData.content ?? "" },
+				animations: dragData.animations,
 			},
 			startTime: target.xPosition,
 		});

@@ -1,0 +1,386 @@
+[
+	{
+		"id": "0",
+		"name": "Tiêu đề đậm",
+		"params": {
+			"fontFamily": "Be Vietnam Pro",
+			"fontSize": 10,
+			"fontWeight": "bold",
+			"color": "#ffffff",
+			"background.enabled": false,
+			"background.color": "#000000",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	},
+	{
+		"id": "1",
+		"name": "Nổi bật vàng",
+		"params": {
+			"fontFamily": "Anton",
+			"fontSize": 10,
+			"fontWeight": "normal",
+			"color": "#fde047",
+			"background.enabled": true,
+			"background.color": "#111827",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	},
+	{
+		"id": "2",
+		"name": "Truyện tranh",
+		"params": {
+			"fontFamily": "Bangers",
+			"fontSize": 10,
+			"fontWeight": "normal",
+			"color": "#fbbf24",
+			"background.enabled": true,
+			"background.color": "#7c2d12",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	},
+	{
+		"id": "3",
+		"name": "Chữ viết tay",
+		"params": {
+			"fontFamily": "Patrick Hand",
+			"fontSize": 10,
+			"fontWeight": "normal",
+			"color": "#ffffff",
+			"background.enabled": false,
+			"background.color": "#000000",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	},
+	{
+		"id": "4",
+		"name": "Thanh lịch",
+		"params": {
+			"fontFamily": "Playfair Display",
+			"fontSize": 10,
+			"fontWeight": "normal",
+			"color": "#fef3c7",
+			"background.enabled": false,
+			"background.color": "#000000",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	},
+	{
+		"id": "5",
+		"name": "Chữ mềm",
+		"params": {
+			"fontFamily": "Baloo 2",
+			"fontSize": 10,
+			"fontWeight": "bold",
+			"color": "#fb7185",
+			"background.enabled": false,
+			"background.color": "#000000",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	},
+	{
+		"id": "6",
+		"name": "Thư pháp",
+		"params": {
+			"fontFamily": "Dancing Script",
+			"fontSize": 10,
+			"fontWeight": "bold",
+			"color": "#ffffff",
+			"background.enabled": false,
+			"background.color": "#000000",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	},
+	{
+		"id": "7",
+		"name": "Thể thao",
+		"params": {
+			"fontFamily": "Oswald",
+			"fontSize": 10,
+			"fontWeight": "bold",
+			"color": "#ffffff",
+			"background.enabled": true,
+			"background.color": "#dc2626",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	},
+	{
+		"id": "8",
+		"name": "Phụ đề sáng",
+		"params": {
+			"fontFamily": "Be Vietnam Pro",
+			"fontSize": 10,
+			"fontWeight": "bold",
+			"color": "#ffffff",
+			"background.enabled": true,
+			"background.color": "#111827",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	},
+	{
+		"id": "9",
+		"name": "Phụ đề vàng",
+		"params": {
+			"fontFamily": "Be Vietnam Pro",
+			"fontSize": 10,
+			"fontWeight": "bold",
+			"color": "#fde047",
+			"background.enabled": true,
+			"background.color": "#111827",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	},
+	{
+		"id": "10",
+		"name": "Tối giản",
+		"params": {
+			"fontFamily": "Be Vietnam Pro",
+			"fontSize": 10,
+			"fontWeight": "normal",
+			"color": "#111827",
+			"background.enabled": true,
+			"background.color": "#ffffff",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	},
+	{
+		"id": "11",
+		"name": "Hồng pastel",
+		"params": {
+			"fontFamily": "Baloo 2",
+			"fontSize": 10,
+			"fontWeight": "bold",
+			"color": "#831843",
+			"background.enabled": true,
+			"background.color": "#fce7f3",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	},
+	{
+		"id": "12",
+		"name": "Xanh pastel",
+		"params": {
+			"fontFamily": "Be Vietnam Pro",
+			"fontSize": 10,
+			"fontWeight": "bold",
+			"color": "#1e3a8a",
+			"background.enabled": true,
+			"background.color": "#dbeafe",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	},
+	{
+		"id": "13",
+		"name": "Thông báo",
+		"params": {
+			"fontFamily": "Oswald",
+			"fontSize": 10,
+			"fontWeight": "bold",
+			"color": "#ffffff",
+			"background.enabled": true,
+			"background.color": "#2563eb",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	},
+	{
+		"id": "14",
+		"name": "Cảnh báo",
+		"params": {
+			"fontFamily": "Anton",
+			"fontSize": 10,
+			"fontWeight": "normal",
+			"color": "#111827",
+			"background.enabled": true,
+			"background.color": "#facc15",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	},
+	{
+		"id": "15",
+		"name": "Trích dẫn",
+		"params": {
+			"fontFamily": "Playfair Display",
+			"fontSize": 10,
+			"fontWeight": "normal",
+			"color": "#ffffff",
+			"background.enabled": true,
+			"background.color": "#581c87",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	},
+	{
+		"id": "16",
+		"name": "Nhật ký",
+		"params": {
+			"fontFamily": "Patrick Hand",
+			"fontSize": 10,
+			"fontWeight": "normal",
+			"color": "#14532d",
+			"background.enabled": true,
+			"background.color": "#dcfce7",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	},
+	{
+		"id": "17",
+		"name": "Lãng mạn",
+		"params": {
+			"fontFamily": "Dancing Script",
+			"fontSize": 10,
+			"fontWeight": "bold",
+			"color": "#fda4af",
+			"background.enabled": false,
+			"background.color": "#000000",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	},
+	{
+		"id": "18",
+		"name": "Màu cam",
+		"params": {
+			"fontFamily": "Bangers",
+			"fontSize": 10,
+			"fontWeight": "normal",
+			"color": "#fff7ed",
+			"background.enabled": true,
+			"background.color": "#ea580c",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	},
+	{
+		"id": "19",
+		"name": "Đen trắng",
+		"params": {
+			"fontFamily": "Oswald",
+			"fontSize": 10,
+			"fontWeight": "bold",
+			"color": "#ffffff",
+			"background.enabled": true,
+			"background.color": "#000000",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	},
+	{
+		"id": "20",
+		"name": "Nhẹ nhàng",
+		"params": {
+			"fontFamily": "Be Vietnam Pro",
+			"fontSize": 10,
+			"fontWeight": "normal",
+			"color": "#a5f3fc",
+			"background.enabled": false,
+			"background.color": "#000000",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	},
+	{
+		"id": "21",
+		"name": "Cổ điển",
+		"params": {
+			"fontFamily": "Playfair Display",
+			"fontSize": 10,
+			"fontWeight": "bold",
+			"color": "#fcd34d",
+			"background.enabled": true,
+			"background.color": "#422006",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	},
+	{
+		"id": "22",
+		"name": "Bong bóng",
+		"params": {
+			"fontFamily": "Baloo 2",
+			"fontSize": 10,
+			"fontWeight": "bold",
+			"color": "#ffffff",
+			"background.enabled": true,
+			"background.color": "#db2777",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	},
+	{
+		"id": "23",
+		"name": "Tin tức",
+		"params": {
+			"fontFamily": "Be Vietnam Pro",
+			"fontSize": 10,
+			"fontWeight": "bold",
+			"color": "#ffffff",
+			"background.enabled": true,
+			"background.color": "#b91c1c",
+			"background.cornerRadius": 18,
+			"background.paddingX": 16,
+			"background.paddingY": 8,
+			"text.autoFit": true
+		}
+	}
+]

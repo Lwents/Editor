@@ -15,6 +15,8 @@ export interface MediaDragData extends BaseDragData {
 export interface TextDragData extends BaseDragData {
 	type: "text";
 	content: string;
+	params?: Partial<ParamValues>;
+	animations?: import("@/animation/types").ElementAnimations;
 }
 
 export interface StickerDragData extends BaseDragData {

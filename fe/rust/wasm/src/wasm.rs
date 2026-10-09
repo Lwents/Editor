@@ -29,3 +29,6 @@ pub use short_subtitles::*;
 
 mod transitions;
 pub use transitions::*;
+
+mod text_presets;
+pub use text_presets::*;

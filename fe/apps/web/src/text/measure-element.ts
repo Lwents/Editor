@@ -3,9 +3,7 @@ import { DEFAULTS } from "@/timeline/defaults";
 import type { TextElement } from "@/timeline";
 import type { TextBackground } from "@/text/background";
 import { resolveNumberAtTime } from "@/animation/values";
-import {
-	getTextVisualRect,
-} from "./layout";
+import { getTextVisualRect } from "./layout";
 import {
 	measureTextLayout,
 	type MeasuredTextLayout,
@@ -65,22 +63,56 @@ export function getTextMeasurementContext():
 export function measureTextElement({
 	element,
 	canvasHeight,
+	canvasWidth,
 	localTime,
 	ctx,
 }: {
 	element: TextElement;
 	canvasHeight: number;
+	canvasWidth?: number;
 	localTime: number;
 	ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 }): MeasuredTextElement {
 	const text = buildTextLayoutParamsFromElement({ element });
-	const measuredLayout = measureTextLayout({
+	let measuredLayout = measureTextLayout({
 		text,
 		canvasHeight,
 		ctx,
 	});
 
 	const bg = buildTextBackgroundFromElement({ element });
+	// Canvas glyph measurements are platform-specific. Fit both the glyphs and
+	// their background; use this same measured layout for rendering and handles.
+	if (element.params["text.autoFit"] === true && canvasWidth) {
+		const paddingX = bg.enabled
+			? 2 *
+				(bg.paddingX ?? DEFAULTS.text.background.paddingX) *
+				measuredLayout.fontSizeRatio
+			: 0;
+		const paddingY = bg.enabled
+			? 2 *
+				(bg.paddingY ?? DEFAULTS.text.background.paddingY) *
+				measuredLayout.fontSizeRatio
+			: 0;
+		const ratio = Math.min(
+			1,
+			(canvasWidth * 0.85) /
+				Math.max(1, measuredLayout.block.maxWidth + paddingX),
+			(canvasHeight * 0.65) /
+				Math.max(1, measuredLayout.block.height + paddingY),
+		);
+		if (ratio < 1)
+			measuredLayout = measureTextLayout({
+				text: {
+					...text,
+					fontSize: text.fontSize * ratio,
+					letterSpacing: (text.letterSpacing ?? 0) * ratio,
+				},
+				canvasHeight,
+				ctx,
+			});
+	}
+
 	const resolvedBackground: ResolvedTextBackground = {
 		...bg,
 		paddingX: resolveNumberAtTime({

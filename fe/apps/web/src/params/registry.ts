@@ -1,20 +1,10 @@
-import type {
-	ParamDefinition,
-	ParamValue,
-	ParamValues,
-} from "@/params";
+import type { ParamDefinition, ParamValue, ParamValues } from "@/params";
 import { MIN_TRANSFORM_SCALE } from "@/animation/transform";
 import type { BlendMode } from "@/rendering";
-import type {
-	ElementType,
-	TimelineElement,
-} from "@/timeline";
+import type { ElementType, TimelineElement } from "@/timeline";
 import { DEFAULTS } from "@/timeline/defaults";
 import { VOLUME_DB_MAX, VOLUME_DB_MIN } from "@/timeline/audio-constants";
-import {
-	CORNER_RADIUS_MAX,
-	CORNER_RADIUS_MIN,
-} from "@/text/background";
+import { CORNER_RADIUS_MAX, CORNER_RADIUS_MIN } from "@/text/background";
 
 export type ElementParamDefinition<TKey extends string = string> =
 	ParamDefinition<TKey> & {
@@ -46,13 +36,7 @@ export class DefinitionRegistry<TKey extends string, TDefinition> {
 		this.entityName = entityName;
 	}
 
-	register({
-		key,
-		definition,
-	}: {
-		key: TKey;
-		definition: TDefinition;
-	}): void {
+	register({ key, definition }: { key: TKey; definition: TDefinition }): void {
 		this.definitions.set(key, definition);
 	}
 
@@ -174,6 +158,13 @@ const audioElementParams: ElementParamDefinition[] = [
 ];
 
 const textElementParams: ElementParamDefinition[] = [
+	{
+		key: "text.autoFit",
+		label: "Fit text inside canvas",
+		type: "boolean",
+		default: false,
+		keyframable: false,
+	},
 	{
 		key: "content",
 		label: "Content",
@@ -335,7 +326,10 @@ elementParamRegistry.register({
 	key: "video",
 	definition: [...visualElementParams, ...audioElementParams],
 });
-elementParamRegistry.register({ key: "image", definition: visualElementParams });
+elementParamRegistry.register({
+	key: "image",
+	definition: visualElementParams,
+});
 elementParamRegistry.register({
 	key: "text",
 	definition: [...textElementParams, ...visualElementParams],
@@ -435,4 +429,3 @@ export function buildElementParamValues({
 	}
 	return values;
 }
-

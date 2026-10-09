@@ -109,6 +109,7 @@ export function buildTextElement({
 
 	return {
 		type: "text",
+		animations: t.animations,
 		name: t.name ?? DEFAULTS.text.element.name,
 		duration: t.duration ?? DEFAULT_NEW_ELEMENT_DURATION,
 		startTime,
@@ -168,7 +169,12 @@ export function buildStickerElement({
 		startTime,
 		trimStart: ZERO_MEDIA_TIME,
 		trimEnd: ZERO_MEDIA_TIME,
-		params: buildDefaultElementParams({ type: "sticker" }),
+		params: {
+			...buildDefaultElementParams({ type: "sticker" }),
+			...(stickerId.startsWith("fluent:")
+				? { "transform.scaleX": 0.3, "transform.scaleY": 0.3 }
+				: {}),
+		},
 	};
 }
 
@@ -393,7 +399,10 @@ export function getElementFontFamilies({
 	const families = new Set<string>();
 	for (const track of [...tracks.overlay, tracks.main, ...tracks.audio]) {
 		for (const element of track.elements) {
-			if (element.type === "text" && typeof element.params.fontFamily === "string") {
+			if (
+				element.type === "text" &&
+				typeof element.params.fontFamily === "string"
+			) {
 				families.add(element.params.fontFamily);
 			}
 			if ("masks" in element) {

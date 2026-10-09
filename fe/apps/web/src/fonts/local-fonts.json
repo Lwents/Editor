@@ -1,0 +1,35 @@
+{
+  "Be Vietnam Pro": {
+    "url": "/vendor/fonts/bevietnampro/BeVietnamPro-Regular.ttf",
+    "weight": "400",
+    "boldUrl": "/vendor/fonts/bevietnampro/BeVietnamPro-Bold.ttf"
+  },
+  "Bangers": {
+    "url": "/vendor/fonts/bangers/Bangers-Regular.ttf",
+    "weight": "400"
+  },
+  "Dancing Script": {
+    "url": "/vendor/fonts/dancingscript/DancingScript[wght].ttf",
+    "weight": "100 900"
+  },
+  "Anton": {
+    "url": "/vendor/fonts/anton/Anton-Regular.ttf",
+    "weight": "400"
+  },
+  "Baloo 2": {
+    "url": "/vendor/fonts/baloo2/Baloo2[wght].ttf",
+    "weight": "100 900"
+  },
+  "Patrick Hand": {
+    "url": "/vendor/fonts/patrickhand/PatrickHand-Regular.ttf",
+    "weight": "400"
+  },
+  "Oswald": {
+    "url": "/vendor/fonts/oswald/Oswald[wght].ttf",
+    "weight": "100 900"
+  },
+  "Playfair Display": {
+    "url": "/vendor/fonts/playfairdisplay/PlayfairDisplay[wght].ttf",
+    "weight": "100 900"
+  }
+}
