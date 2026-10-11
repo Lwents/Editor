@@ -104,6 +104,8 @@ export function applyMaskFeather(options: any): OffscreenCanvas;
 
 export function buildFadeKeyframes(duration: bigint, fade_duration: bigint, fade_in: boolean, fade_out: boolean, opacity: number): any;
 
+export function exportSubtitles(options: any): any;
+
 export function floorToFrame(arg0: FloorToFrameOptions): MediaTime | undefined;
 
 export function formatTimecode(arg0: FormatTimecodeOptions): string | undefined;

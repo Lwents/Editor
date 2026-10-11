@@ -19,6 +19,7 @@ export type CanvasRendererParams = {
 	width: number;
 	height: number;
 	fps: FrameRate;
+	captureOutput?: boolean;
 };
 
 export class CanvasRenderer {
@@ -27,11 +28,14 @@ export class CanvasRenderer {
 	width: number;
 	height: number;
 	fps: FrameRate;
+	private captureOutput: boolean;
+	private outputCanvas: HTMLCanvasElement | null = null;
 
-	constructor({ width, height, fps }: CanvasRendererParams) {
+	constructor({ width, height, fps, captureOutput = false }: CanvasRendererParams) {
 		this.width = width;
 		this.height = height;
 		this.fps = fps;
+		this.captureOutput = captureOutput;
 
 		const surface = createCanvasSurface({ width, height });
 		this.canvas = surface.canvas;
@@ -43,7 +47,21 @@ export class CanvasRenderer {
 			width: this.width,
 			height: this.height,
 		});
-		return wasmCompositor.getCanvas();
+		const shared = wasmCompositor.getCanvas();
+		// WebGL effect previews also draw into the compositor's backing canvas.
+		// Keep their pixels out of the visible preview, and isolate every export.
+		if (this.captureOutput || shared.getContext("webgl2")) {
+			this.captureOutput = true;
+			return this.getCapturedCanvas();
+		}
+		return shared;
+	}
+
+	private getCapturedCanvas(): HTMLCanvasElement {
+		this.outputCanvas ??= document.createElement("canvas");
+		if (this.outputCanvas.width !== this.width) this.outputCanvas.width = this.width;
+		if (this.outputCanvas.height !== this.height) this.outputCanvas.height = this.height;
+		return this.outputCanvas;
 	}
 
 	setSize({ width, height }: { width: number; height: number }) {
@@ -93,6 +111,13 @@ export class CanvasRenderer {
 			name: "renderFrame",
 			fn: () => wasmCompositor.render(frame),
 		});
+		if (this.captureOutput) {
+			const output = this.getCapturedCanvas();
+			const context = output.getContext("2d");
+			if (!context) throw new Error("Failed to capture rendered frame");
+			context.clearRect(0, 0, this.width, this.height);
+			context.drawImage(wasmCompositor.getCanvas(), 0, 0, this.width, this.height);
+		}
 	}
 
 	async renderToCanvas({
@@ -104,6 +129,7 @@ export class CanvasRenderer {
 		time: number;
 		targetCanvas: HTMLCanvasElement;
 	}) {
+		this.captureOutput = true;
 		await this.render({ node, time });
 
 		const ctx = targetCanvas.getContext("2d");
@@ -115,7 +141,7 @@ export class CanvasRenderer {
 			name: "drawImage",
 			fn: () =>
 				ctx.drawImage(
-					wasmCompositor.getCanvas(),
+					this.getCapturedCanvas(),
 					0,
 					0,
 					targetCanvas.width,

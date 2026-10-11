@@ -205,8 +205,12 @@ async def _prepare_target_subtitles(
     grouped_max_duration = max(settings.subtitle_group_max_duration, 3.2)
     grouped_max_gap = max(settings.subtitle_group_max_gap, 0.45)
 
+    raw_events = parse_srt(subtitle_file)
+    source_file = work_dir / "subtitles.source.srt"
+    if not source_file.is_file():
+        write_srt(raw_events, source_file)
     events = group_subtitle_events(
-        parse_srt(subtitle_file),
+        raw_events,
         max_chars=grouped_max_chars,
         max_duration=grouped_max_duration,
         max_gap=grouped_max_gap,

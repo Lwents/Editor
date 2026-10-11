@@ -3,11 +3,12 @@ import { withBotId } from "botid/next/config";
 import { withContentCollections } from "@content-collections/next";
 
 const nextConfig: NextConfig = {
+	distDir: process.env.EDITOR_BUILD_DIR || ".next",
 	compiler: {
 		removeConsole: process.env.NODE_ENV === "production",
 	},
 	reactStrictMode: true,
-	productionBrowserSourceMaps: true,
+	productionBrowserSourceMaps: process.env.EDITOR_DESKTOP_BUILD !== "1",
 	output: "standalone",
 	images: {
 		remotePatterns: [

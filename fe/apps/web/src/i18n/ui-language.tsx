@@ -274,6 +274,9 @@ export const vietnamese: Record<string, string> = {
 	Unknown: "Không rõ",
 	"Bezier curve editor": "Chỉnh đường cong chuyển động",
 	"Curve preset preview": "Xem trước đường cong",
+	"Import video": "Nhập video",
+	"Edit subtitles": "Sửa phụ đề",
+	"Export video": "Xuất video",
 	"Welcome to OpenCut": "Chào mừng đến OpenCut",
 	"Edit, translate and review your video": "Chỉnh sửa, dịch và kiểm tra video",
 	"Import a video, translate subtitles, then review each segment before exporting.":
@@ -406,7 +409,7 @@ export function LanguageSelect() {
 					</span>
 				</SelectValue>
 			</SelectTrigger>
-			<SelectContent>
+			<SelectContent className="z-[260]">
 				<SelectItem value="vi" textValue="Tiếng Việt">
 					<span className="flex items-center gap-2">
 						<LanguageFlag language="vi" />

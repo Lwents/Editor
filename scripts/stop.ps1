@@ -1,6 +1,14 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
-foreach ($port in @(5175, 8100, 20129, 20130)) {
+$ports = @(5175, 8100)
+foreach ($name in @('vieneu', 'zerotts')) {
+    $record = Join-Path $root ".runtime\$name-port.txt"
+    if (Test-Path $record) {
+        $saved = 0
+        if ([int]::TryParse((Get-Content $record -Raw).Trim(), [ref]$saved) -and $saved -ge 1024 -and $saved -le 65535) { $ports += $saved }
+    }
+}
+foreach ($port in ($ports | Select-Object -Unique)) {
     $listener = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $listener) { continue }
     $process = Get-CimInstance Win32_Process -Filter "ProcessId=$($listener.OwningProcess)"
@@ -17,7 +25,7 @@ foreach ($port in @(5175, 8100, 20129, 20130)) {
     if ($LASTEXITCODE -ne 0) { throw "Khong dung duoc tien trinh $target." }
 }
 for ($attempt=0; $attempt -lt 20; $attempt++) {
-    $remaining = Get-NetTCPConnection -LocalPort 5175,8100,20129,20130 -State Listen -ErrorAction SilentlyContinue
+    $remaining = Get-NetTCPConnection -LocalPort $ports -State Listen -ErrorAction SilentlyContinue
     if (-not $remaining) { exit 0 }
     Start-Sleep -Milliseconds 250
 }

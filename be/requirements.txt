@@ -23,3 +23,6 @@ numpy
 Pillow>=11.0
 opencv-python
 openai
+
+# Source subtitles read from the video image, with display timing.
+rapidocr-onnxruntime==1.2.3

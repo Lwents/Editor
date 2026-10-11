@@ -14,8 +14,21 @@ export const baseRateLimit = new Ratelimit({
 	prefix: "rate-limit",
 });
 
+const desktopWindows = new Map<string, { started: number; count: number }>();
+
 export async function checkRateLimit({ request }: { request: Request }) {
 	const ip = request.headers.get("x-forwarded-for") ?? "anonymous";
+	if (process.env.EDITOR_DESKTOP_MODE === "1") {
+		const now = Date.now();
+		for (const [key, entry] of desktopWindows) {
+			if (now - entry.started >= 60_000) desktopWindows.delete(key);
+		}
+		const entry = desktopWindows.get(ip) ?? { started: now, count: 0 };
+		entry.count += 1;
+		desktopWindows.set(ip, entry);
+		const success = entry.count <= 100;
+		return { success, limited: !success };
+	}
 	const { success } = await baseRateLimit.limit(ip);
 	return { success, limited: !success };
 }

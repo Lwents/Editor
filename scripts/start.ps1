@@ -14,6 +14,25 @@ function Assert-OwnedPort([int]$Port) {
         }
     }
 }
+function VoicePort([string]$Name, [int]$Preferred, [int]$Alternative) {
+    $record = Join-Path $runtime "$Name-port.txt"
+    $candidates = @($Preferred)
+    if (Test-Path $record) {
+        $saved = 0
+        if ([int]::TryParse((Get-Content $record -Raw).Trim(), [ref]$saved) -and $saved -ge 1024 -and $saved -le 65535) { $candidates = @($saved, $Preferred) }
+    }
+    $candidates += $Alternative..($Alternative + 8)
+    foreach ($candidate in ($candidates | Select-Object -Unique)) {
+        $listener = Listener $candidate
+        if ($listener) {
+            $process = Get-CimInstance Win32_Process -Filter "ProcessId=$($listener.OwningProcess)"
+            if (-not $process.CommandLine -or $process.CommandLine.IndexOf($root, [StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
+        }
+        $candidate | Set-Content $record -Encoding ASCII
+        return [int]$candidate
+    }
+    throw "Khong tim thay cong trong cho $Name."
+}
 try {
     Assert-OwnedPort 8100
     Assert-OwnedPort 5175
@@ -27,15 +46,16 @@ try {
     $env:PYTHONUTF8 = '1'
     $useVieNeu = Select-String -Path (Join-Path $root 'be\.env') -Pattern '^\s*AUTO_TRANSLATE_VOICE_ENGINE\s*=\s*["'']?vieneu(?:[-_]tts)?["'']?\s*$' -Quiet
     if ($useVieNeu) {
-        Assert-OwnedPort 20129
+        $vieNeuPort = VoicePort "vieneu" 20129 20131
+        $env:AUTO_TRANSLATE_VIENEU_API_URL = "http://127.0.0.1:$vieNeuPort"
         $speechPython = Join-Path $root 'be\.venv-vieneu\Scripts\python.exe'
         if (-not (Test-Path $speechPython)) { throw 'Chua cai VieNeu. Chay scripts/install-vieneu.ps1 truoc.' }
-        $env:VIENEU_PORT = '20129'
-        if (-not (Listener 20129)) {
+        $env:VIENEU_PORT = [string]$vieNeuPort
+        if (-not (Listener $vieNeuPort)) {
             $previousHfHome = $env:HF_HOME
             try {
                 $env:HF_HOME = Join-Path $root 'be\models\vieneu'
-                Start-Process $speechPython -ArgumentList '-m','uvicorn','app.services.ai.vieneu_server:app','--app-dir',('"' + (Join-Path $root 'be') + '"'),'--host','127.0.0.1','--port','20129' -WorkingDirectory (Join-Path $root 'be') -NoNewWindow -RedirectStandardOutput (Join-Path $runtime "vieneu-$stamp.out.log") -RedirectStandardError (Join-Path $runtime "vieneu-$stamp.err.log") | Out-Null
+                Start-Process $speechPython -ArgumentList '-m','uvicorn','app.services.ai.vieneu_server:app','--app-dir',('"' + (Join-Path $root 'be') + '"'),'--host','127.0.0.1','--port',([string]$vieNeuPort) -WorkingDirectory (Join-Path $root 'be') -NoNewWindow -RedirectStandardOutput (Join-Path $runtime "vieneu-$stamp.out.log") -RedirectStandardError (Join-Path $runtime "vieneu-$stamp.err.log") | Out-Null
             } finally { $env:HF_HOME = $previousHfHome }
         }
     }
@@ -44,9 +64,10 @@ try {
     $zeroRequired = Select-String -Path (Join-Path $root 'be\.env') -Pattern '^\s*AUTO_TRANSLATE_VOICE_ENGINE\s*=\s*["'']?zerotts["'']?\s*$' -Quiet
     if ($zeroRequired -and -not $useZeroTts) { throw 'Chua cai ZeroTTS. Chay scripts/install-zerotts.ps1 truoc.' }
     if ($useZeroTts) {
-        Assert-OwnedPort 20130
-        if (-not (Listener 20130)) {
-            Start-Process $zeroPython -ArgumentList '-m','uvicorn','app.services.ai.zerotts_server:app','--app-dir',('"' + (Join-Path $root 'be') + '"'),'--host','127.0.0.1','--port','20130' -WorkingDirectory (Join-Path $root 'be') -NoNewWindow -RedirectStandardOutput (Join-Path $runtime "zerotts-$stamp.out.log") -RedirectStandardError (Join-Path $runtime "zerotts-$stamp.err.log") | Out-Null
+        $zeroPort = VoicePort "zerotts" 20130 20140
+        $env:AUTO_TRANSLATE_ZEROTTS_API_URL = "http://127.0.0.1:$zeroPort"
+        if (-not (Listener $zeroPort)) {
+            Start-Process $zeroPython -ArgumentList '-m','uvicorn','app.services.ai.zerotts_server:app','--app-dir',('"' + (Join-Path $root 'be') + '"'),'--host','127.0.0.1','--port',([string]$zeroPort) -WorkingDirectory (Join-Path $root 'be') -NoNewWindow -RedirectStandardOutput (Join-Path $runtime "zerotts-$stamp.out.log") -RedirectStandardError (Join-Path $runtime "zerotts-$stamp.err.log") | Out-Null
         }
     }
     if (-not (Listener 8100)) {
@@ -64,11 +85,11 @@ try {
             $page = Invoke-WebRequest 'http://127.0.0.1:5175/projects' -UseBasicParsing -TimeoutSec 3
             $speechReady = $true
             if ($useVieNeu) {
-                $speechHealth = Invoke-RestMethod 'http://127.0.0.1:20129/health' -TimeoutSec 2
+                $speechHealth = Invoke-RestMethod "http://127.0.0.1:$vieNeuPort/health" -TimeoutSec 2
                 $speechReady = $speechHealth.status -in @('ready', 'loading')
             }
             if ($useZeroTts) {
-                $zeroHealth = Invoke-RestMethod 'http://127.0.0.1:20130/health' -TimeoutSec 2
+                $zeroHealth = Invoke-RestMethod "http://127.0.0.1:$zeroPort/health" -TimeoutSec 2
                 $speechReady = $speechReady -and ($zeroHealth.status -in @('ready', 'loading'))
             }
             if ($health.status -eq 'ok' -and $page.StatusCode -eq 200 -and $speechReady) { $ready = $true; break }

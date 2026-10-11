@@ -1,5 +1,6 @@
 "use client";
 
+import { exportSubtitles } from "opencut-wasm";
 import { shortSubtitleCues } from "./short-subtitles";
 import {
 	BatchCommand,
@@ -162,6 +163,11 @@ export function TranslationView() {
 			if (mounted.current) setPreviewing(false);
 		}
 	}
+	const [subtitleLanguage, setSubtitleLanguage] = useState<
+		"translated" | "source"
+	>("translated");
+	const [exportingSubtitles, setExportingSubtitles] = useState(false);
+	const [subtitleFormat, setSubtitleFormat] = useState<"srt" | "ass">("srt");
 	const [shortLines, setShortLines] = useState(true);
 	const [selectedMedia, setSelectedMedia] = useState("");
 	const mounted = useRef(false);
@@ -246,6 +252,69 @@ export function TranslationView() {
 		(t) => t.type === "text" && (!binding?.trackId || t.id === binding.trackId),
 	);
 	const cues = track?.type === "text" ? track.elements : [];
+
+	async function downloadSubtitles() {
+		setExportingSubtitles(true);
+		let sourceTiming: string | null = null;
+		try {
+			const canvas = editor.project.getActive().settings.canvasSize;
+			let exportCues = cues.map((cue) => ({
+				startTime: mediaTimeToSeconds({ time: cue.startTime }),
+				duration: mediaTimeToSeconds({ time: cue.duration }),
+				params: cue.params,
+			}));
+			if (subtitleLanguage === "source") {
+				if (!binding?.jobId)
+					throw new Error("Chưa có phụ đề tiếng gốc từ lần dịch phim.");
+				const response = await fetch(
+					`${API}/jobs/${binding.jobId}/subtitles?language=source`,
+				);
+				if (!response.ok)
+					throw new Error("Không tìm thấy phụ đề tiếng gốc của phim này.");
+				sourceTiming = response.headers.get("x-subtitle-timing");
+				const parsed = parseSubtitleFile({
+					fileName: "source.srt",
+					input: await response.text(),
+				});
+				if (!parsed.captions.length) throw new Error("Phụ đề tiếng gốc trống.");
+				exportCues = parsed.captions.map((cue) => ({
+					startTime: cue.startTime,
+					duration: cue.duration,
+					params: { ...cues[0].params, content: cue.text },
+				}));
+			}
+			const file = exportSubtitles({
+				format: subtitleFormat,
+				name: `${binding?.name || editor.project.getActive().metadata.name} - ${subtitleLanguage === "source" ? "goc" : "vi"}`,
+				width: canvas.width,
+				height: canvas.height,
+				cues: exportCues,
+			}) as { filename: string; content: string };
+			const url = URL.createObjectURL(
+				new Blob(["\uFEFF", file.content], {
+					type: "text/plain;charset=utf-8",
+				}),
+			);
+			const link = document.createElement("a");
+			link.href = url;
+			link.download = file.filename;
+			document.body.appendChild(link);
+			link.click();
+			link.remove();
+			setTimeout(() => URL.revokeObjectURL(url), 1000);
+			toast.success(
+				subtitleLanguage === "source"
+					? sourceTiming === "display"
+						? "Đã xuất chữ gốc theo thời gian hiển thị trên video."
+						: "Đã xuất tiếng gốc theo mốc lời thoại."
+					: "Đã xuất phụ đề đang chỉnh sửa trên timeline.",
+			);
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : String(e));
+		} finally {
+			setExportingSubtitles(false);
+		}
+	}
 
 	async function addVideo(file: File) {
 		const [asset] = await processMediaAssets({ files: [file] });
@@ -892,6 +961,55 @@ export function TranslationView() {
 					Mở cảnh có phụ đề
 				</Button>
 			)}
+
+			{cues.length > 0 && (
+				<section
+					className="rounded-lg border p-3 space-y-3"
+					aria-label="Xuất file phụ đề"
+				>
+					<h3 className="text-sm font-semibold">Xuất file phụ đề</h3>
+					<select
+						aria-label="Ngôn ngữ phụ đề xuất"
+						className="w-full rounded-md border bg-background p-2 text-sm"
+						value={subtitleLanguage}
+						onChange={(e) =>
+							setSubtitleLanguage(e.target.value as "translated" | "source")
+						}
+					>
+						<option value="translated">
+							Bản dịch tiếng Việt · Đã chỉnh sửa
+						</option>
+						<option value="source" disabled={!binding?.jobId}>
+							Tiếng gốc của phim
+						</option>
+					</select>
+					<div className="flex gap-2">
+						<select
+							aria-label="Định dạng phụ đề"
+							className="min-w-0 flex-1 rounded-md border bg-background px-3 text-sm"
+							value={subtitleFormat}
+							onChange={(e) =>
+								setSubtitleFormat(e.target.value as "srt" | "ass")
+							}
+						>
+							<option value="srt">SRT · Chữ và thời gian</option>
+							<option value="ass">ASS · Font, màu, vị trí</option>
+						</select>
+						<Button
+							disabled={locked || exportingSubtitles}
+							onClick={downloadSubtitles}
+						>
+							{exportingSubtitles ? "Đang đọc / xuất phụ đề…" : "Tải phụ đề"}
+						</Button>
+					</div>
+					<p className="text-xs text-muted-foreground">
+						{subtitleLanguage === "source"
+							? "Ưu tiên chữ gốc hiện trên video và thời gian hiển thị. Video không có chữ dùng mốc lời thoại."
+							: `${cues.length} đoạn · Xuất chữ và thời gian sau các chỉnh sửa của bạn.`}
+					</p>
+				</section>
+			)}
+
 			<input
 				ref={subInput}
 				type="file"

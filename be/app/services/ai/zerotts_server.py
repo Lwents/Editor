@@ -17,7 +17,7 @@ log = logging.getLogger("uvicorn.error")
 _engine = None
 _engine_error = None
 _lock = threading.Lock()
-_model_dir = Path(__file__).resolve().parents[3] / "models" / "zerotts"
+_model_dir = Path(os.environ.get("ZEROTTS_MODEL_DIR", str(Path(__file__).resolve().parents[3] / "models" / "zerotts")))
 
 
 def load_engine():
@@ -27,7 +27,7 @@ def load_engine():
             from zerotts import ZeroTTS
             _engine = ZeroTTS.from_pretrained(
                 _model_dir, local_files_only=True,
-                intra_op_num_threads=min(4, os.cpu_count() or 1),
+                intra_op_num_threads=max(1, int(os.environ.get("EDITOR_CPU_THREADS", min(4, os.cpu_count() or 1)))),
             )
             _engine_error = None
             log.info("ZeroTTS CPU ready: %d voices", len(_engine.list_voices()))
@@ -43,9 +43,10 @@ async def lifespan(app):
         except Exception as exc:
             _engine_error = type(exc).__name__
             log.exception("ZeroTTS initialization failed")
-    task = asyncio.create_task(asyncio.to_thread(initialize))
+    task = None if os.environ.get("EDITOR_LAZY_MODELS") == "1" else asyncio.create_task(asyncio.to_thread(initialize))
     yield
-    await task
+    if task is not None:
+        await task
 
 
 app = FastAPI(title="Local ZeroTTS Speech", lifespan=lifespan)

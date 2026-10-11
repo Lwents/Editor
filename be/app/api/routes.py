@@ -1981,20 +1981,29 @@ async def get_job(job_id: str) -> JobProgress:
 
 
 @router.get("/jobs/{job_id}/subtitles", tags=["jobs"])
-async def get_editor_subtitles(job_id: str) -> FileResponse:
+async def get_editor_subtitles(job_id: str, language: Literal["translated", "source"] = "translated") -> FileResponse:
     job = job_store.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
     if job.status != JobStatus.completed and not (job.status == JobStatus.failed and job.request.editable_subtitles):
         raise HTTPException(status_code=409, detail="Phụ đề dịch chưa hoàn tất.")
     work_dir = Path(settings.storage_dir) / "jobs" / job_id
-    candidates = [work_dir / name for name in ("subtitles.editor.srt", f"subtitles.{settings.target_language}.srt", "subtitles.grouped.srt")]
-    if job.status == JobStatus.failed:
+    if language == "source":
+        from app.services.subtitles.visible import visible_source_subtitles
+        try:
+            visible_file = await visible_source_subtitles(work_dir)
+        except (ImportError, RuntimeError, OSError):
+            visible_file = None
+        if visible_file:
+            return FileResponse(visible_file, media_type="application/x-subrip", filename=f"{job_id}-source.srt", headers={"X-Subtitle-Timing": "display"})
+    names = ("subtitles.source.srt", "subtitles.whisper.srt") if language == "source" else ("subtitles.editor.srt", f"subtitles.{settings.target_language}.srt", "subtitles.grouped.srt")
+    candidates = [work_dir / name for name in names]
+    if job.status == JobStatus.failed and language != "source":
         candidates = candidates[:2]  # Only a finalized editor or translated artifact, never unfinished ASR.
     subtitle_file = next((path for path in candidates if path.is_file() and path.stat().st_size > 0), None)
     if not subtitle_file:
         raise HTTPException(status_code=404, detail="Phụ đề chưa sẵn sàng.")
-    return FileResponse(subtitle_file, media_type="application/x-subrip", filename=f"{job_id}.srt")
+    return FileResponse(subtitle_file, media_type="application/x-subrip", filename=f"{job_id}.srt", headers={"X-Subtitle-Timing": "speech" if language == "source" else "translated"})
 
 
 @router.post("/jobs/{job_id}/evaluate", response_model=JobProgress, tags=["jobs"])

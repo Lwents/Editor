@@ -26,3 +26,6 @@ pub use short_subtitles::{ShortSubtitle, ShortSubtitleOptions, short_subtitles};
 
 mod transitions;
 pub use transitions::{transition_duration, transition_progress};
+
+mod subtitle_export;
+pub use subtitle_export::{SubtitleExportOptions, SubtitleExportCue, SubtitleExportParams, SubtitleExportFile, export_subtitles};

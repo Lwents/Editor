@@ -67,6 +67,7 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 			width,
 			height,
 			fps,
+			captureOutput: true,
 		});
 
 		this.format = format;

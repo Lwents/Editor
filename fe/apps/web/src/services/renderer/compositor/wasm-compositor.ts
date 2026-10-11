@@ -55,7 +55,9 @@ class WasmCompositor {
 		if (
 			!this.initializedSize ||
 			this.initializedSize.width !== width ||
-			this.initializedSize.height !== height
+			this.initializedSize.height !== height ||
+			this.canvas.width !== width ||
+			this.canvas.height !== height
 		) {
 			resizeCompositor(width, height);
 			this.initializedSize = { width, height };

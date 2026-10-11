@@ -23,11 +23,21 @@ def load_engine():
     with _lock:
         if _engine is None:
             from vieneu import Vieneu
-            _engine = Vieneu(
+            options = dict(
                 mode="v3turbo", backend=os.environ.get("VIENEU_BACKEND", "auto"),
                 device=os.environ.get("VIENEU_DEVICE", "auto"),
                 max_batch_size=1, max_streams=1,
+                threads=max(1, int(os.environ.get("EDITOR_CPU_THREADS", min(4, os.cpu_count() or 1)))),
             )
+            try:
+                _engine = Vieneu(**options)
+            except RuntimeError:
+                if options["device"] != "cuda":
+                    raise
+                log.warning("VieNeu GPU unavailable; using local CPU backend")
+                import torch
+                torch.cuda.empty_cache()
+                _engine = Vieneu(**{**options, "device": "cpu", "backend": "pytorch"})
             _engine_error = None
             log.info("VieNeu ready: backend=%s, sample_rate=%s", _engine.backend, _engine.sample_rate)
     return _engine
@@ -42,9 +52,10 @@ async def lifespan(app):
         except Exception as exc:
             _engine_error = type(exc).__name__
             log.exception("VieNeu model initialization failed")
-    task = asyncio.create_task(asyncio.to_thread(initialize))
+    task = None if os.environ.get("EDITOR_LAZY_MODELS") == "1" else asyncio.create_task(asyncio.to_thread(initialize))
     yield
-    await task
+    if task is not None:
+        await task
 
 
 app = FastAPI(title="Local VieNeu Speech", lifespan=lifespan)

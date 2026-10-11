@@ -7,6 +7,7 @@ Cải tiến:
 - Log số segment nhận diện được để debug
 """
 from pathlib import Path
+import os
 
 from app.core import settings
 from app.models.job import ProcessingMode
@@ -82,6 +83,16 @@ class FasterWhisperAsr(AsrEngine):
                     device=settings.whisper_device,
                     compute_type=settings.whisper_compute_type,
                     local_files_only=settings.whisper_local_files_only,
+                    cpu_threads=max(1, int(os.environ.get("EDITOR_CPU_THREADS", os.cpu_count() or 1))),
+                )
+            except (RuntimeError, ValueError) as exc:
+                if settings.whisper_device not in {"cuda", "auto"}:
+                    raise
+                print("[ASR] GPU initialization unavailable; using CPU int8.")
+                model = WhisperModel(
+                    settings.whisper_model, device="cpu", compute_type="int8",
+                    local_files_only=settings.whisper_local_files_only,
+                    cpu_threads=max(1, int(os.environ.get("EDITOR_CPU_THREADS", os.cpu_count() or 1))),
                 )
             except ModuleNotFoundError as exc:
                 if exc.name == "faster_whisper":
@@ -107,7 +118,7 @@ class FasterWhisperAsr(AsrEngine):
                 language=whisper_language,
                 vad_filter=settings.whisper_vad_filter,
                 beam_size=profile.whisper_beam_size,
-                word_timestamps=profile.whisper_word_timestamps,
+                word_timestamps=True,
                 condition_on_previous_text=True,   # giúp giữ ngữ cảnh tên nhân vật
                 initial_prompt=initial_prompt,
                 # Giảm hallucination: segment im lặng bị bỏ
@@ -117,6 +128,7 @@ class FasterWhisperAsr(AsrEngine):
             )
 
             events: list[SubtitleEvent] = []
+            source_events: list[SubtitleEvent] = []
             segment_count = 0
             for segment in segments_iter:
                 text = segment.text.strip()
@@ -132,12 +144,14 @@ class FasterWhisperAsr(AsrEngine):
                         text=text,
                     )
                 )
+                source_events.extend(_source_word_cues(segment.words) or [events[-1]])
                 segment_count += 1
 
             print(f"[ASR] Faster-Whisper produced {segment_count} segments from {audio_file.name}")
 
             if not events:
                 raise AsrError("Whisper không nhận diện được lời thoại để tạo phụ đề.")
+            write_srt(source_events, output_file.parent / "subtitles.source.srt")
             return write_srt(events, output_file)
 
         return await asyncio.to_thread(transcribe)
@@ -169,14 +183,14 @@ class OpenAIWhisperAsr(AsrEngine):
             requested_device = settings.whisper_device
             device = requested_device if requested_device != "cuda" or torch.cuda.is_available() else "cpu"
             try:
-                model = whisper.load_model(settings.whisper_model, device=device)
+                model = whisper.load_model(getattr(settings, "whisper_fallback_model", None) or settings.whisper_model, device=device)
                 result = model.transcribe(
                     str(audio_file),
                     language=None if language == "auto" else language,
                     fp16=False,
                     verbose=False,
                     beam_size=profile.whisper_beam_size,
-                    word_timestamps=profile.whisper_word_timestamps,
+                    word_timestamps=True,
                     condition_on_previous_text=True,
                     initial_prompt=_INITIAL_PROMPTS.get(language, _INITIAL_PROMPTS["auto"]),
                 )
@@ -184,6 +198,7 @@ class OpenAIWhisperAsr(AsrEngine):
                 raise AsrError(f"Whisper dự phòng không nhận diện được audio: {exc}") from exc
 
             events: list[SubtitleEvent] = []
+            source_events: list[SubtitleEvent] = []
             for segment in result.get("segments", []):
                 text = str(segment.get("text") or "").strip()
                 if not text or (events and _is_repeated(text, events[-1].text)):
@@ -195,9 +210,11 @@ class OpenAIWhisperAsr(AsrEngine):
                         text=text,
                     )
                 )
+                source_events.extend(_source_word_cues(segment.get("words", [])) or [events[-1]])
             if not events:
                 raise AsrError("Whisper dự phòng không nhận diện được lời thoại để tạo phụ đề.")
             print(f"[ASR] OpenAI Whisper fallback produced {len(events)} segments from {audio_file.name}")
+            write_srt(source_events, output_file.parent / "subtitles.source.srt")
             return write_srt(events, output_file)
 
         return await asyncio.to_thread(transcribe)
@@ -296,7 +313,10 @@ def _load_nvidia_runtime_dlls() -> None:
     if not nvidia_root.exists():
         return
 
-    dll_dirs = [path for path in nvidia_root.glob("*/bin") if path.exists()]
+    torch_lib = Path(sys.prefix) / "Lib" / "site-packages" / "torch" / "lib"
+    dll_dirs = ([torch_lib] if torch_lib.exists() else []) + [
+        path for path in nvidia_root.glob("*/bin") if path.exists()
+    ]
     for path in dll_dirs:
         try:
             os.add_dll_directory(str(path))
@@ -323,3 +343,38 @@ def _segment_end(segment) -> float:
         return segment.end
     last_word = next((word for word in reversed(words) if getattr(word, "word", "").strip()), None)
     return getattr(last_word, "end", segment.end) if last_word else segment.end
+
+
+def _source_word_cues(words) -> list[SubtitleEvent]:
+    """Use measured word boundaries, never distribute a long sentence by length."""
+    import math
+    result: list[SubtitleEvent] = []
+    current: list[tuple[float, float, str]] = []
+
+    def flush():
+        if current:
+            result.append(SubtitleEvent(current[0][0], current[-1][1], "".join(w[2] for w in current).strip()))
+            current.clear()
+
+    for word in words or []:
+        get = word.get if isinstance(word, dict) else lambda k: getattr(word, k, None)
+        text = str(get("word") or "")
+        start, end = get("start"), get("end")
+        if not text.strip() or start is None or end is None:
+            continue
+        start, end = float(start), float(end)
+        if not math.isfinite(start + end) or end <= start:
+            # Whisper can repeat a phrase with zero-length timestamps at the end.
+            # Keep attached punctuation, but never invent a timed cue for it.
+            if current and text.strip() and all(c in ".!?,;:。！？。，；：、" for c in text.strip()):
+                a, b, previous = current[-1]
+                current[-1] = (a, b, previous + text)
+                flush()
+            continue
+        if current and (start - current[-1][1] > 0.45 or end - current[0][0] > 3.2 or len("".join(w[2] for w in current) + text) > 32):
+            flush()
+        current.append((start, end, text))
+        if text.rstrip().endswith((".", "!", "?", ",", ";", "。", "！", "？", "，", "；", "、")):
+            flush()
+    flush()
+    return result

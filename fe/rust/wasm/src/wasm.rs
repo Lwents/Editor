@@ -32,3 +32,6 @@ pub use transitions::*;
 
 mod text_presets;
 pub use text_presets::*;
+
+mod subtitle_export;
+pub use subtitle_export::*;

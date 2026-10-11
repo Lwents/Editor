@@ -52,10 +52,14 @@ async function forward(
 			options.body = request.body;
 			options.duplex = "half";
 		}
-		const response = await fetch(
+		const destination = new URL(
 			`${(process.env.RVP_BACKEND_URL || "http://127.0.0.1:8100").replace(/\/$/, "")}/${route}`,
-			options,
 		);
+		if (request.method === "GET" && route.endsWith("/subtitles")) {
+			const language = new URL(request.url).searchParams.get("language");
+			if (language !== null) destination.searchParams.set("language", language);
+		}
+		const response = await fetch(destination, options);
 		const outgoing = new Headers({ "cache-control": "no-store" });
 		for (const key of [
 			"content-type",
@@ -63,6 +67,7 @@ async function forward(
 			"content-disposition",
 			"accept-ranges",
 			"content-range",
+			"x-subtitle-timing",
 		]) {
 			const value = response.headers.get(key);
 			if (value) outgoing.set(key, value);

@@ -1,0 +1,28 @@
+Bundled public models (no account data):
+
+VieNeu-TTS v3 Turbo - Pham Nguyen Ngoc Bao / pnnbao-ump
+https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo
+Revision: 61b85e3d937fbbacb387714180e8182823512523
+License: Apache License 2.0 (the SDK license is included in python/Lib/site-packages/vieneu-3.8.3.dist-info/licenses).
+
+MOSS Audio Tokenizer Nano - OpenMOSS Team
+https://huggingface.co/OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano
+License: Apache License 2.0.
+
+ZeroTTS - zeroweight-ai
+https://github.com/zeroweight-ai/ZeroTTS
+https://huggingface.co/zeroweight-ai/ZeroTTS
+License: MIT; LICENSE and NOTICE included in the Python package metadata.
+
+Whisper base - OpenAI / faster-whisper - SYSTRAN
+https://github.com/openai/whisper
+https://huggingface.co/Systran/faster-whisper-base
+License: MIT; license included in the respective Python packages.
+
+HTDemucs - Meta Platforms / Alexandre Defossez
+https://github.com/adefossez/demucs
+https://huggingface.co/adefossez/HTDemucs
+License: MIT; license included in demucs package metadata.
+
+Model files are redistributable public weights. They do not include credentials,
+reference clips, voice clones or personal media from the build machine.
