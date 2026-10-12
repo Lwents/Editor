@@ -22,6 +22,9 @@ def package(payload, output, version):
     output.mkdir(parents=True, exist_ok=True)
     archive = output / 'Editor-Update-Windows-x64.zip'
     scopes = {'desktop': payload / 'resources/app', 'backend-app': payload / 'resources/bundle/backend/app', 'frontend': payload / 'resources/bundle/frontend'}
+    for entry in ['frontend/apps/web/server.js', 'frontend/node_modules/next/package.json', 'backend-app/main.py', 'desktop/updates.cjs']:
+        scope, relative = entry.split('/', 1)
+        if not (scopes[scope] / relative).is_file(): raise ValueError('Missing entry point: ' + entry)
     with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as data:
         for scope, directory in scopes.items():
             if not directory.is_dir(): raise ValueError('Missing scope: ' + scope)

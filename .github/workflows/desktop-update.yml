@@ -36,6 +36,19 @@ jobs:
         run: |
           & "$env:GITHUB_WORKSPACE\scripts\desktop\prepare-frontend.ps1" -BuildRoot "$env:RUNNER_TEMP\EditorCI"
           & "$env:GITHUB_WORKSPACE\scripts\desktop\stage-frontend.ps1" -BuildRoot "$env:RUNNER_TEMP\EditorCI"
+          # Robocopy success codes are 0 through 7; scripts already reject 8+.
+          $global:LASTEXITCODE=0
+          $Frontend="$env:RUNNER_TEMP\EditorCI\app\resources\bundle\frontend\apps\web"
+          $env:PORT='5476'; $env:HOSTNAME='127.0.0.1'
+          $Server=Start-Process node.exe -ArgumentList "$Frontend\server.js" -WorkingDirectory $Frontend -RedirectStandardOutput "$env:RUNNER_TEMP\frontend.out.log" -RedirectStandardError "$env:RUNNER_TEMP\frontend.err.log" -PassThru
+          try {
+            $Ready=$false
+            for($i=0;$i -lt 60;$i++){
+              try { if((Invoke-WebRequest http://127.0.0.1:5476/projects -TimeoutSec 2).StatusCode -eq 200){$Ready=$true;break} } catch {}
+              Start-Sleep -Milliseconds 500
+            }
+            if(-not $Ready){Get-Content "$env:RUNNER_TEMP\frontend.err.log";throw 'Packaged frontend did not start'}
+          } finally { Stop-Process -Id $Server.Id -Force -ErrorAction SilentlyContinue }
       - name: Package update without AI models
         shell: pwsh
         run: |
