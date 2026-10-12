@@ -40,6 +40,20 @@ class TranslationBatchStructureError(TranslationError):
         self.updates = updates or {}
 
 
+TRANSLATION_POLICY_VERSION = 3
+
+
+def create_translation_client():
+    if settings.translation_engine.lower() == 'gemini_web':
+        from app.services.ai.gemini_web import GeminiWebClient
+        return GeminiWebClient()
+    if not settings.ninerouter_api_key:
+        raise TranslationError('Chưa cấu hình API key để dịch phụ đề.')
+    from openai import AsyncOpenAI
+    return AsyncOpenAI(api_key=settings.ninerouter_api_key,
+                       base_url=settings.ninerouter_api_url, max_retries=0)
+
+
 # ─── Engine classes ───────────────────────────────────────────────────────────
 
 class TranslationEngine:
@@ -107,17 +121,7 @@ class GeminiTranslation(TranslationEngine):
         except ImportError as exc:
             raise TranslationError("Thiếu thư viện openai để gọi AI dịch phụ đề.") from exc
 
-        if use_browser:
-            from app.services.ai.gemini_web import GeminiWebClient
-            client = GeminiWebClient()
-        else:
-            client = AsyncOpenAI(
-                api_key=settings.ninerouter_api_key,
-                base_url=settings.ninerouter_api_url,
-                # Retry is controlled below so one failing batch cannot silently
-                # multiply the SDK retries by the pipeline retries.
-                max_retries=0,
-            )
+        client = create_translation_client()
         profile = get_processing_profile(processing_mode)
         character_names = build_character_name_registry(context)
         source_texts = [
@@ -170,7 +174,8 @@ class GeminiTranslation(TranslationEngine):
                     f"đã lưu checkpoint {completed_batches}/{len(ranges)} batch để chạy tiếp."
                 )
             batch = [
-                {"id": index + 1, "source": source_texts[index]}
+                {"id": index + 1, "source": source_texts[index],
+                 "time": [events[index].start, events[index].end]}
                 for index in range(start, end)
             ]
             previous_context = [
@@ -365,6 +370,7 @@ def _translation_fingerprint(
         # Invalidate checkpoints produced before proper names were locked to a
         # single canonical spelling across every batch.
         "character_name_policy": 2,
+        "translation_policy": TRANSLATION_POLICY_VERSION,
     }
     encoded = json.dumps(
         payload,
@@ -487,6 +493,7 @@ async def _translate_gemini_batch(
     previous_context: list[dict[str, object]],
     next_context: list[dict[str, object]],
     request_timeout_seconds: float = 150,
+    review_mode: bool = False,
 ) -> tuple[list[str], dict]:
     system_prompt = (
         "Bạn là biên dịch viên phụ đề phim nhiều tập, chuyên giữ nhất quán nhân vật và ngữ cảnh. "
@@ -502,7 +509,15 @@ async def _translate_gemini_batch(
         "- Đọc các CURRENT_ITEMS liền nhau như một câu liên tục để dịch câu bị chia: không thêm chủ thể hay danh từ mới ở mỗi mảnh. "
         "Ví dụ 太医院嘱咐的 / 药膳和补汤熬好了 phải nối nghĩa 'Theo lời dặn của Thái y viện / dược thiện và canh bổ đã nấu xong'; "
         "không dịch mảnh đầu thành 'Món theo lời dặn'. 熬汤 là nấu/hầm canh; không máy móc gọi mọi món là sắc thuốc.\n"
-        "- Dùng CHARACTER_BIBLE và MEMORY làm sự thật ưu tiên cho tên, biệt danh, giới tính, quan hệ và xưng hô.\n"
+        "- Đọc PLOT_SUMMARY và SCENE_NOTES để hiểu ai làm gì, mục đích, hồi ức và độc thoại nội tâm. "
+        "Hồ sơ và MEMORY chỉ là ngữ cảnh có bằng chứng; câu nguồn là căn cứ cuối cùng, không sửa câu theo một phỏng đoán trong hồ sơ.\n"
+        "- Dịch thành ngữ theo nghĩa trong cảnh, không ghép nghĩa từng chữ hoặc bịa thành ngữ Việt. "
+        "得寸进尺 là lấn tới/được đằng chân lân đằng đầu; không đổi thành chuyện tiền bạc. "
+        "吃人的皇城 là ẩn dụ hoàng thành tàn khốc, không khẳng định có tình tiết ăn thịt người. "
+        "垫脚石 là bàn đạp, phải giữ ý bị lợi dụng; không làm mất sắc thái bằng từ 'thứ'.\n"
+        "- Xưng hô nhất quán với vai vế: thoại cung đình ta/ngươi, mẫu phi/con, vương gia/thuộc hạ; "
+        "không tự đổi sang tao/mày. Giữ sắc thái giận dữ, mỉa mai và lời đe dọa của nguồn. "
+        "Phân biệt nội tâm với lời đáp ngoài miệng; không gộp hoặc đảo ý hai loại lời này.\n"
         "- CHARACTER_NAME_CONTRACT là bắt buộc: khi nhắc nhân vật phải chép đúng canonical_names, không dịch nghĩa tên riêng, "
         "không dùng alias và không đổi tên giữa các batch.\n"
         "- Chỉ xác định giới tính, vai vế hoặc quan hệ khi câu nguồn/ngữ cảnh có bằng chứng; chưa chắc thì dùng cách gọi trung tính.\n"
@@ -511,6 +526,17 @@ async def _translate_gemini_batch(
         "- Câu ngắn, tự nhiên, phù hợp thời lượng phụ đề/lồng tiếng; không để sót chữ Trung, pinyin hoặc chú thích.\n"
         "- memory_updates chỉ ghi thông tin nhân vật mới được CURRENT_ITEMS xác nhận, gồm characters, relationships, glossary, addressing_rules.\n"
     )
+    if review_mode:
+        system_prompt += (
+            "\nNHIỆM VỤ HIỆN TẠI: ĐỐI CHIẾU BẢN DỊCH. Mỗi CURRENT_ITEM có source và draft. "
+            "Kiểm tra draft theo source, các câu liền trước/sau và hồ sơ ngữ cảnh. "
+            "Chỉ sửa lỗi sai nghĩa, thành ngữ, bỏ mất ý quan trọng, thêm tình tiết, nhầm chủ thể/đối tượng, "
+            "sai tên hoặc xưng hô. Câu đã đúng giữ nguyên; không viết lại cốt truyện cho hay hơn. "
+            "Không dùng một bản dịch sai ở PREVIOUS_CONTEXT làm bằng chứng cho nghĩa nguồn. "
+            "Trước khi trả lời tự kiểm tra: ai nói với ai, ai làm gì, phủ định, nguyên nhân, "
+            "ẩn dụ và độc thoại có còn đúng với source không. Trả items đủ id với text cuối cùng; "
+            "không sửa timestamp, không chép draft còn lỗi."
+        )
     payload = {
         "source_language": source_language,
         "target_language": target_language,
@@ -523,6 +549,7 @@ async def _translate_gemini_batch(
         "current_items": batch,
         "required_ids": [int(item["id"]) for item in batch],
         "next_context": next_context,
+        "review_mode": review_mode,
     }
     response = await client.chat.completions.create(
         model=settings.ai_model,
@@ -584,6 +611,7 @@ async def _translate_gemini_batch_with_retries(
     next_context: list[dict[str, object]],
     retries: int = 3,
     request_timeout_seconds: float = 150,
+    review_mode: bool = False,
 ) -> tuple[list[str], dict]:
     last_error: Exception | None = None
     for attempt in range(1, retries + 1):
@@ -599,6 +627,7 @@ async def _translate_gemini_batch_with_retries(
                     previous_context,
                     next_context,
                     request_timeout_seconds=request_timeout_seconds,
+                    review_mode=review_mode,
                 ),
                 timeout=request_timeout_seconds + 5,
             )
@@ -625,6 +654,7 @@ async def _translate_gemini_batch_with_retries(
                         client, chunk, source_language, target_language, context, updated_memory,
                         previous_context, next_context, retries=retries,
                         request_timeout_seconds=request_timeout_seconds,
+                        review_mode=review_mode,
                     )
                     recovered.update({int(item['id']): text for item, text in zip(chunk, chunk_texts)})
                     _merge_translation_memory(combined_updates, chunk_updates)
@@ -833,6 +863,8 @@ def _compact_context(context: dict | None) -> dict:
         "film_title",
         "genre",
         "setting",
+        "plot_summary",
+        "scene_notes",
         "characters",
         "relationships",
         "glossary",

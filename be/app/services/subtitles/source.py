@@ -1,4 +1,5 @@
 import asyncio
+import json
 import shutil
 import subprocess
 import sys
@@ -10,7 +11,7 @@ from app.core import settings
 from app.models.job import ProcessingMode
 from app.services.ai.context import analyze_video_context
 from app.services.ai.asr import get_asr_engine
-from app.services.ai.translation import get_translation_engine
+from app.services.ai.translation import get_translation_engine, TRANSLATION_POLICY_VERSION
 from app.services.media.ffmpeg import find_ffmpeg
 from app.services.subtitles.ass import write_srt
 from app.services.subtitles.timing import group_subtitle_events, parse_srt, split_long_subtitle_events
@@ -19,6 +20,42 @@ from app.services.subtitles.visible import visible_source_subtitles
 
 class SubtitleSourceError(RuntimeError):
     pass
+
+
+def _quality_signature(source_video: Path | None) -> dict | None:
+    if source_video and source_video.is_file():
+        stat = source_video.stat()
+        return {'path': str(source_video.resolve()), 'size': stat.st_size, 'mtime_ns': stat.st_mtime_ns}
+    return None
+
+
+def _validated_target(target: Path, work_dir: Path, source_video: Path | None) -> bool:
+    from app.services.ai.asr_cache import digest
+    try:
+        marker = json.loads((work_dir / 'translation_quality.json').read_text(encoding='utf-8'))
+        return (marker.get('policy') == TRANSLATION_POLICY_VERSION
+                and marker.get('review_completed') is True
+                and marker.get('engine') == settings.translation_engine
+                and marker.get('model') == ('Gemini Web' if settings.translation_engine == 'gemini_web' else settings.ai_model)
+                and marker.get('video') == _quality_signature(source_video)
+                and marker.get('sha256') == digest(target)
+                and marker.get('source_sha256') == digest(work_dir / 'subtitles.grouped.srt'))
+    except (OSError, ValueError, AttributeError, TypeError):
+        return False
+
+
+def _merge_context(context: dict, visual: dict) -> dict:
+    """Keep the whole-clip bible when an OCR review contributes local clues."""
+    merged = dict(context)
+    for key, value in visual.items():
+        previous = merged.get(key)
+        if isinstance(previous, list) and isinstance(value, list):
+            merged[key] = previous + [item for item in value if item not in previous]
+        elif isinstance(previous, dict) and isinstance(value, dict):
+            merged[key] = {**previous, **value}
+        elif not previous:
+            merged[key] = value
+    return merged
 
 
 def translation_progress_percent(
@@ -126,7 +163,10 @@ async def get_or_create_subtitles(
     on_measurement: Callable[[float, float], None] | None = None,
 ) -> Path:
     target_file = work_dir / f"subtitles.{settings.target_language}.srt"
-    if target_file.exists() and target_file.stat().st_size > 0:
+    if target_file.exists() and target_file.stat().st_size > 0 and (
+        settings.translation_engine.lower() == 'passthrough'
+        or await asyncio.to_thread(_validated_target, target_file, work_dir, source_video)
+    ):
         progress("Dùng lại phụ đề đã dịch xong", translation_progress_end)
         return target_file
 
@@ -282,9 +322,15 @@ async def _prepare_target_subtitles_impl(
     ):
         return grouped_file
 
-    progress("Chuẩn bị phụ đề để gửi Gemini Web" if settings.translation_engine == 'gemini_web' else "AI nhận diện tên phim, nhân vật và vai vế", max(0, translation_progress_start - 1))
-    context = await analyze_video_context(source_video, events, work_dir)
-    context.update(visual_context)
+    progress("Gemini đọc ngữ cảnh cốt truyện, nhân vật và xưng hô" if settings.translation_engine == 'gemini_web' else "AI nhận diện tên phim, nhân vật và vai vế", max(0, translation_progress_start - 1))
+    if on_measurement is not None:
+        on_measurement(0, 1)
+    context = await analyze_video_context(source_video, events, work_dir, verified_context=visual_context)
+    if on_measurement is not None:
+        on_measurement(1, 1)
+    context = _merge_context(context, visual_context)
+
+    review_start = translation_progress_start + (translation_progress_end - translation_progress_start)//2
 
     progress("Dịch phụ đề sang tiếng Việt", translation_progress_start)
     def translation_progress(completed: int, total: int) -> None:
@@ -292,7 +338,7 @@ async def _prepare_target_subtitles_impl(
             completed,
             total,
             translation_progress_start,
-            translation_progress_end,
+            review_start,
         )
         progress(
             f"Dịch phụ đề sang tiếng Việt ({completed}/{max(total, 1)} batch, đã lưu checkpoint)",
@@ -311,12 +357,32 @@ async def _prepare_target_subtitles_impl(
         checkpoint_file=work_dir / "translation_checkpoint.json",
         on_batch_progress=translation_progress,
     )
+    from app.services.ai.translation_review import review_translated_events
+    def review_progress(completed: int, total: int) -> None:
+        percent = translation_progress_percent(completed, total, review_start, translation_progress_end)
+        progress(f'Đối chiếu nghĩa, thành ngữ và xưng hô ({completed}/{max(total, 1)} batch)', percent)
+        if on_measurement is not None:
+            on_measurement(completed, total)
+
+    translated_events = await review_translated_events(
+        events, translated_events, context, work_dir, source_language,
+        target_language, processing_mode, review_progress)
     translated_events = split_long_subtitle_events(
         translated_events,
         max_chars=grouped_max_chars,
         max_duration=grouped_max_duration,
     )
-    return write_srt(translated_events, work_dir / f"subtitles.{target_language}.srt")
+    target = write_srt(translated_events, work_dir / f"subtitles.{target_language}.srt")
+    from app.services.ai.asr_cache import digest
+    pending = work_dir / 'translation_quality.pending.json'
+    pending.write_text(json.dumps({'policy': TRANSLATION_POLICY_VERSION,
+        'engine': settings.translation_engine,
+        'model': 'Gemini Web' if settings.translation_engine == 'gemini_web' else settings.ai_model,
+        'video': _quality_signature(source_video), 'sha256': digest(target),
+        'source_sha256': digest(grouped_file), 'review_completed': True},
+        ensure_ascii=False, indent=2), encoding='utf-8')
+    pending.replace(work_dir / 'translation_quality.json')
+    return target
 
 
 async def download_platform_subtitles(url: str, work_dir: Path, progress: Callable[[str, int], None], source_language: str = "auto") -> Path:

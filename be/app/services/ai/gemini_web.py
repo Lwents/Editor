@@ -79,6 +79,7 @@ class GeminiBrowser:
         self._page = None
         self._process = None
         self._hidden = False
+        self._window_bounds = None
 
     def _set_visible(self, visible):
         """Hide only native windows owned by this dedicated CDP browser."""
@@ -119,9 +120,33 @@ class GeminiBrowser:
         user32.EnumWindows(visit, 0)
         if not windows:
             raise GeminiWebError('Không tìm được cửa sổ Gemini để ẩn/hiện. Bấm Mở Gemini rồi thử lại.')
+        # SW_HIDE suspends Chromium painting: Gemini's lazy UI can remain
+        # half-loaded forever. Keep this dedicated window rendering outside
+        # the entire virtual desktop, without activating it.
+        page_session = self._page.context.new_cdp_session(self._page)
+        try:
+            window = page_session.send('Browser.getWindowForTarget')
+            window_id, bounds = window['windowId'], window['bounds']
+            if bounds.get('windowState') != 'normal':
+                page_session.send('Browser.setWindowBounds', {'windowId': window_id,
+                                  'bounds': {'windowState': 'normal'}})
+                bounds = page_session.send('Browser.getWindowBounds', {'windowId': window_id})['bounds']
+            left, top = user32.GetSystemMetrics(76), user32.GetSystemMetrics(77)
+            width, height = user32.GetSystemMetrics(78), user32.GetSystemMetrics(79)
+            on_screen = (bounds['left'] + bounds['width'] > left and bounds['left'] < left + width
+                         and bounds['top'] + bounds['height'] > top and bounds['top'] < top + height)
+            if not self._hidden and on_screen:
+                self._window_bounds = {key: bounds[key] for key in ('left', 'top', 'width', 'height')}
+            restored = self._window_bounds or {'left': left + 100, 'top': top + 100,
+                                               'width': 1280, 'height': 900}
+            destination = restored if visible else {**restored,
+                'left': left - restored['width'] - 100, 'top': top - restored['height'] - 100}
+            page_session.send('Browser.setWindowBounds', {'windowId': window_id, 'bounds': destination})
+        finally:
+            page_session.detach()
         for handle in windows:
-            user32.ShowWindow(handle, 8 if visible else 0)  # SW_SHOWNA / SW_HIDE
-        if any(bool(user32.IsWindowVisible(handle)) != visible for handle in windows):
+            user32.ShowWindow(handle, 8)  # SW_SHOWNA, no focus stealing
+        if any(not user32.IsWindowVisible(handle) for handle in windows):
             raise GeminiWebError('Không đổi được trạng thái cửa sổ Gemini. Thử mở lại Gemini.')
         self._hidden = not visible
 
@@ -221,7 +246,19 @@ class GeminiBrowser:
                        or any(sign_in.nth(i).is_visible() for i in range(sign_in.count()))
                        or any(login_controls.nth(i).is_visible() for i in range(login_controls.count())))
         ready = not needs_login and self._editor(page) is not None and page.url.startswith('https://gemini.google.com/')
-        return {'ok': ready, 'ready': ready, 'message': 'Gemini sẵn sàng. Model được chọn trực tiếp trong cửa sổ Gemini.' if ready else 'Đăng nhập Google và hoàn tất màn hình chào trong cửa sổ Gemini, rồi bấm Kiểm tra phiên.'}
+        return {'ok': ready, 'ready': ready, 'needs_login': needs_login,
+                'message': 'Gemini sẵn sàng. Model được chọn trực tiếp trong cửa sổ Gemini.' if ready else 'Đăng nhập Google và hoàn tất màn hình chào trong cửa sổ Gemini, rồi bấm Kiểm tra phiên.'}
+
+    def _wait_ready(self, page, cancelled, seconds=20):
+        """A reopened signed-in tab needs time to render its editor."""
+        deadline = time.monotonic() + seconds
+        while True:
+            if cancelled.is_set():
+                raise GeminiWebError('Đã hủy chờ Gemini.')
+            status = self._status()
+            if status.get('ready') or status.get('needs_login') or time.monotonic() >= deadline:
+                return bool(status.get('ready'))
+            page.wait_for_timeout(250)
 
     def _complete(self, messages, timeout, cancelled, background=None, attachments=None):
         with session_lock():
@@ -229,14 +266,14 @@ class GeminiBrowser:
 
     def _complete_unlocked(self, messages, timeout, cancelled, background=None, attachments=None):
         page = self._connect()
-        if not self._status()['ready']:
+        self._set_visible(not (settings.gemini_web_background if background is None else background))
+        if not self._wait_ready(page, cancelled):
             self._set_visible(True)
             page.bring_to_front()
             raise GeminiWebError('Gemini chưa sẵn sàng. Mở Cấu hình AI → Mở Gemini và đăng nhập trước.')
-        self._set_visible(not (settings.gemini_web_background if background is None else background))
         page.goto('https://gemini.google.com/app', wait_until='domcontentloaded', timeout=60000)
-        page.wait_for_timeout(1000)
-        page.add_style_tag(content='*, *::before, *::after { animation: none !important; transition: none !important; }')
+        if not self._wait_ready(page, cancelled):
+            raise GeminiWebError('Gemini chưa tải xong ô nhập hoặc cần đăng nhập. Mở Gemini rồi thử lại.')
         editor = self._editor(page)
         if editor is None:
             raise GeminiWebError('Không tìm thấy ô nhập Gemini. Kiểm tra đăng nhập hoặc giao diện Gemini.')
@@ -244,7 +281,7 @@ class GeminiBrowser:
         prompt = '\n\n'.join(str(message.get('content', '')) for message in messages)
         prompt += ('\n\nChỉ trả JSON, không Markdown. Bổ sung trường request_id chính xác: '
                    + json.dumps(request_id) + '. Mỗi id trong current_items phải có text không rỗng. '
-                   'Không trả bản tóm tắt; không gộp hoặc đổi id. Ví dụ cấu trúc: '
+                   'Làm đúng nhiệm vụ đã yêu cầu; không thay items bằng lời giải thích, không gộp hoặc đổi id. Ví dụ cấu trúc: '
                    '{"request_id":"' + request_id + '","items":[{"id":1,"text":"bản dịch"}],"memory_updates":{}}')
         if attachments:
             self._upload_images(page, attachments)
@@ -287,10 +324,36 @@ class GeminiBrowser:
         if not files or any(not Path(path).is_file() for path in files):
             raise GeminiWebError('Thiếu ảnh kiểm tra phụ đề để gửi Gemini.')
         uploader = page.get_by_role('button', name=re.compile(r'Upload files|Add files|Nội dung tải lên', re.I))
-        uploader.click(timeout=15000)
-        image_input = page.locator('input[type="file"][accept*="image"]')
-        image_input.first.wait_for(state='attached', timeout=15000)
-        image_input.first.set_input_files(files)
+        # Some Gemini layouts open a transient input/native file chooser;
+        # others show an upload menu. Intercept before clicking so a hidden
+        # Windows file dialog cannot block a background translation.
+        choosers = []
+        on_chooser = lambda chooser: choosers.append(chooser)
+        page.on('filechooser', on_chooser)
+        try:
+            uploader.click(timeout=15000)
+            deadline = time.monotonic() + 15
+            chosen = False
+            menu_clicked = False
+            while time.monotonic() < deadline:
+                if choosers:
+                    choosers[0].set_files(files)
+                    chosen = True
+                    break
+                inputs = page.locator('input[type="file"][accept*="image"]')
+                if inputs.count():
+                    inputs.first.set_input_files(files)
+                    chosen = True
+                    break
+                menu = page.get_by_role('menuitem', name=re.compile(r'Upload files|Tải tệp|Tải lên', re.I))
+                if not menu_clicked and menu.count() and menu.first.is_visible():
+                    menu.first.click(timeout=5000)
+                    menu_clicked = True
+                page.wait_for_timeout(100)
+            if not chosen:
+                raise GeminiWebError('Không mở được bộ chọn ảnh Gemini. Mở Gemini và thử lại.')
+        finally:
+            page.remove_listener('filechooser', on_chooser)
         page.keyboard.press('Escape')
         # Gemini only creates filename tooltips on hover; use loaded previews.
         page.wait_for_function("count => Array.from(document.querySelectorAll('.file-preview-container img')).filter(img => img.complete && img.naturalWidth > 0).length >= count", arg=len(files), timeout=60000)
