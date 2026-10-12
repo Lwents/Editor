@@ -55,7 +55,7 @@ export function MobileGate({ children }: MobileGateProps) {
 						{uiTranslate("Desktop only (for now)")}
 					</h1>
 					<p className="text-muted-foreground text-sm leading-relaxed">
-						OpenCut isn't optimized for mobile or iPad yet. Things will break
+						Editor isn't optimized for mobile or iPad yet. Things will break
 						and the layout will be a mess. Come back on a desktop for the real
 						experience.
 					</p>
@@ -65,8 +65,8 @@ export function MobileGate({ children }: MobileGateProps) {
 						{uiTranslate("Take a look anyway")}
 					</Button>
 					<Button variant="ghost" asChild>
-						<Link href="/roadmap" className="flex items-center gap-1">
-							{uiTranslate("Roadmap")}
+						<Link href="/projects" className="flex items-center gap-1">
+							{uiTranslate("Projects")}
 							<HugeiconsIcon icon={ArrowRight01Icon} size={14} />
 						</Link>
 					</Button>

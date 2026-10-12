@@ -1,0 +1,186 @@
+{
+  "date": "2026-10-11",
+  "normalization": "Unicode NFC; case-insensitive; punctuation and spaces excluded; Chinese variants NOT converted",
+  "real_video": {
+    "duration_seconds": 78.9,
+    "gold_method": "34 captions manually transcribed from actual frames; no independently annotated full timing reference",
+    "expected_cues": 34,
+    "recognized_cues": 34,
+    "ocr_text": {
+      "reference_characters": 293,
+      "character_errors": 0,
+      "cer_percent": 0.0,
+      "character_score_percent": 100.0
+    },
+    "caption_in_known_blank_61_6_to_76_567": false,
+    "last_cue": {
+      "start": 76.56666666666666,
+      "end": 78.89999999999999,
+      "text": "下期讲述章鱼海洋音乐家",
+      "confidence": 0.9925,
+      "needs_review": false
+    },
+    "ocr_engine": "RapidOCR / PP-OCRv5",
+    "algorithm_version": 7,
+    "full_ocr_seconds_excluding_first_model_download": 79.81496759999573
+  },
+  "asr": {
+    "base": {
+      "device": "cpu",
+      "recognition_seconds_excluding_load": 11.089587999995274,
+      "agreement_with_visual_caption_reference_not_audio_accuracy": {
+        "reference_characters": 293,
+        "character_errors": 34,
+        "cer_percent": 11.604,
+        "character_score_percent": 88.396
+      }
+    },
+    "turbo": {
+      "device": "cuda",
+      "recognition_seconds_excluding_load": 6.408007000005455,
+      "agreement_with_visual_caption_reference_not_audio_accuracy": {
+        "reference_characters": 293,
+        "character_errors": 7,
+        "cer_percent": 2.389,
+        "character_score_percent": 97.611
+      }
+    }
+  },
+  "synthetic_video_tests": {
+    "en-landscape": {
+      "expected_cues": 6,
+      "recognized_cues": 6,
+      "exact_text_cues": 6,
+      "text": {
+        "reference_characters": 122,
+        "character_errors": 0,
+        "cer_percent": 0.0,
+        "character_score_percent": 100.0
+      },
+      "boundaries_within_40ms": 12,
+      "expected_boundaries": 12,
+      "maximum_boundary_error_ms": 33.0,
+      "extra_cues": 0
+    },
+    "en-portrait": {
+      "expected_cues": 6,
+      "recognized_cues": 6,
+      "exact_text_cues": 6,
+      "text": {
+        "reference_characters": 122,
+        "character_errors": 0,
+        "cer_percent": 0.0,
+        "character_score_percent": 100.0
+      },
+      "boundaries_within_40ms": 12,
+      "expected_boundaries": 12,
+      "maximum_boundary_error_ms": 33.0,
+      "extra_cues": 0
+    },
+    "vi-landscape": {
+      "expected_cues": 6,
+      "recognized_cues": 6,
+      "exact_text_cues": 6,
+      "text": {
+        "reference_characters": 101,
+        "character_errors": 0,
+        "cer_percent": 0.0,
+        "character_score_percent": 100.0
+      },
+      "boundaries_within_40ms": 12,
+      "expected_boundaries": 12,
+      "maximum_boundary_error_ms": 33.0,
+      "extra_cues": 0
+    },
+    "vi-portrait": {
+      "expected_cues": 6,
+      "recognized_cues": 6,
+      "exact_text_cues": 5,
+      "text": {
+        "reference_characters": 101,
+        "character_errors": 2,
+        "cer_percent": 1.98,
+        "character_score_percent": 98.02
+      },
+      "boundaries_within_40ms": 12,
+      "expected_boundaries": 12,
+      "maximum_boundary_error_ms": 33.0,
+      "extra_cues": 0
+    },
+    "zh-landscape": {
+      "expected_cues": 6,
+      "recognized_cues": 6,
+      "exact_text_cues": 6,
+      "text": {
+        "reference_characters": 47,
+        "character_errors": 0,
+        "cer_percent": 0.0,
+        "character_score_percent": 100.0
+      },
+      "boundaries_within_40ms": 12,
+      "expected_boundaries": 12,
+      "maximum_boundary_error_ms": 33.0,
+      "extra_cues": 0
+    },
+    "zh-portrait": {
+      "expected_cues": 6,
+      "recognized_cues": 6,
+      "exact_text_cues": 6,
+      "text": {
+        "reference_characters": 47,
+        "character_errors": 0,
+        "cer_percent": 0.0,
+        "character_score_percent": 100.0
+      },
+      "boundaries_within_40ms": 12,
+      "expected_boundaries": 12,
+      "maximum_boundary_error_ms": 33.0,
+      "extra_cues": 0
+    }
+  },
+  "limitations": [
+    "Small sample: one real Chinese clip and six generated clips, not accuracy on all videos.",
+    "Translation meaning and human-verified speech transcription accuracy are not measured.",
+    "OCR confidence is not an accuracy percentage.",
+    "Displayed subtitle timing is distinct from speech timing.",
+    "OCR is CPU-bound and slower than ASR; first run downloads models."
+  ],
+  "sources": [
+    "https://github.com/RapidAI/RapidOCR",
+    "https://github.com/pbcquoc/vietocr",
+    "https://github.com/SYSTRAN/faster-whisper",
+    "https://github.com/jianfch/stable-ts"
+  ],
+  "synthetic_dataset": {
+    "videos": 6,
+    "cues": 36,
+    "fps": 30,
+    "languages": [
+      "English",
+      "Vietnamese",
+      "Chinese"
+    ],
+    "positions": [
+      "top",
+      "middle",
+      "bottom"
+    ],
+    "no_ground_truth_text_provided_to_inference": true,
+    "language_hint_provided_to_ocr": true,
+    "latest_synthetic_run_algorithm_version": 5,
+    "later_versions_verified_on_real_video_and_watermark_regression": true
+  },
+  "verification": {
+    "backend_unit_tests_passed": 18,
+    "typescript_no_emit": "passed",
+    "watermark_variants_and_review_flags_regression": "passed",
+    "web_http_status": 200,
+    "frontend_backend_quality_proxy_http_status": 200,
+    "source_export_cues": 34,
+    "source_export_has_caption_at_75_seconds": false,
+    "vietnamese_wrong_diacritics_cue_flagged_for_review": true,
+    "translation_realign_http_status": 200,
+    "translation_realign_cues": 34,
+    "translation_realign_has_caption_at_75_seconds": false
+  }
+}

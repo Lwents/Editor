@@ -13,6 +13,7 @@ CopyTree "$BuildRoot\electron" $Payload
 Copy-Item "$Payload\electron.exe" "$Payload\Editor.exe" -Force
 Remove-Item "$Payload\electron.exe" -Force
 CopyTree $PSScriptRoot "$Payload\resources\app"
+foreach($Old in @('settings.html','settings.cjs','preload.cjs')) { Remove-Item (Join-Path "$Payload\resources\app" $Old) -Force -ErrorAction SilentlyContinue }
 Get-ChildItem "$Payload\resources\app" -File |Where-Object {$_.Extension -in @('.ps1','.iss') -or $_.Name -eq 'package-release.py'} |Remove-Item -Force
 Copy-Item "$Repo\fe\LICENSE" "$Payload\OPENCUT-LICENSE.txt" -Force
 CopyTree "$BuildRoot\python" "$Bundle\python"
@@ -28,8 +29,9 @@ CopyTree "$Repo\be\app" "$Bundle\backend\app"
 CopyTree "$Repo\be\models\vieneu\hub" "$Bundle\models\vieneu\hub" @('token')
 CopyTree "$env:USERPROFILE\.cache\huggingface\hub\models--adefossez--HTDemucs" "$Bundle\models\vieneu\hub\models--adefossez--HTDemucs"
 CopyTree "$Repo\be\models\zerotts" "$Bundle\models\zerotts"
-$Whisper=Get-ChildItem "$Repo\be\models\vieneu\hub\models--Systran--faster-whisper-base\snapshots" -Directory|Select-Object -First 1
+$Whisper=Get-ChildItem "$Repo\be\models\whisper\models--mobiuslabsgmbh--faster-whisper-large-v3-turbo\snapshots" -Directory|Select-Object -First 1
 CopyTree $Whisper.FullName "$Bundle\models\whisper"
+CopyTree "$Repo\be\models\ocr" "$Bundle\backend\models\ocr"
 Copy-Item "$env:USERPROFILE\.cache\whisper\base.pt" "$Bundle\models\base.pt" -Force
 New-Item -ItemType Directory -Force "$Bundle\tools"|Out-Null
 Copy-Item "$Repo\be\.venv\Lib\site-packages\imageio_ffmpeg\binaries\ffmpeg-win-x86_64-v7.1.exe" "$Bundle\tools\ffmpeg.exe" -Force
@@ -40,13 +42,13 @@ foreach($Name in @('msvcp140.dll','msvcp140_1.dll','msvcp140_2.dll','vcruntime14
 }
 Get-ChildItem "$Bundle\frontend" -Recurse -Force -File | Where-Object {$_.Name -like '.env*' -or $_.Name -like '*.map'} | Remove-Item -Force
 @'
-Editor 1.0 - Windows 10/11 x64
+Lwent Editor 1.1 - Windows 10/11 x64
 Open Editor.exe. Editing, subtitles and export run locally.
 AI translation requires your own OpenAI-compatible endpoint and API key.
-Configure them from Editor > Cau hinh AI / phan cung.
+Configure them using the AI settings icon in the editor toolbar.
 VieNeu and ZeroTTS models are bundled. Edge voices require Internet.
 Projects, settings and logs are stored in your Windows user profile.
-GPU support depends on drivers; CPU compatibility mode is available in Settings.
+GPU support depends on drivers; compatible CPU mode is selected automatically when needed.
 Do not distribute personal settings or API keys with this application.
 
 Includes Electron (MIT), Next.js (MIT), Python (PSF), PyTorch (BSD),

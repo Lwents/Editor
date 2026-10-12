@@ -24,7 +24,7 @@ temporary = release / "Editor-Windows-x64.zip.tmp"
 with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as output:
     for file in [*files, checksums]:
         output.write(file, file.name)
-    output.writestr("CAI_DAT.txt", """EDITOR - WINDOWS 10/11 x64
+    output.writestr("CAI_DAT.txt", """LWENT EDITOR - WINDOWS 10/11 x64
 
 1. Giai nen TOAN BO file ZIP vao cung mot thu muc.
 2. Chay Editor-Setup-Windows-x64.exe de cai dat.
@@ -34,7 +34,7 @@ with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_STORED, allowZip64=
 Khong can cai Python, Node.js hay trinh duyet rieng.
 VieNeu va ZeroTTS co mo hinh offline; Edge can Internet.
 Dich AI can dia chi dich vu va khoa API cua chinh ban.
-Mo menu Editor > Cau hinh AI / phan cung de thiet lap.
+Bam bieu tuong Cau hinh AI tren thanh tren cua editor de thiet lap.
 Ung dung tu kiem tra GPU/CPU. Toc do phu thuoc phan cung va driver.
 Bo cai khong chua tai khoan, mat khau hay khoa API ca nhan.
 """)

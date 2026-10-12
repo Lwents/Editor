@@ -14,6 +14,7 @@ from app.services.ai.translation import get_translation_engine
 from app.services.media.ffmpeg import find_ffmpeg
 from app.services.subtitles.ass import write_srt
 from app.services.subtitles.timing import group_subtitle_events, parse_srt, split_long_subtitle_events
+from app.services.subtitles.visible import visible_source_subtitles
 
 
 class SubtitleSourceError(RuntimeError):
@@ -205,11 +206,25 @@ async def _prepare_target_subtitles(
     grouped_max_duration = max(settings.subtitle_group_max_duration, 3.2)
     grouped_max_gap = max(settings.subtitle_group_max_gap, 0.45)
 
-    raw_events = parse_srt(subtitle_file)
+    visible_file = None
+    if source_video is not None and subtitle_file.name in {"subtitles.whisper.srt", "subtitles.visible.srt"}:
+        progress("Đọc chữ gốc và thời gian hiển thị trên video", max(0, translation_progress_start - 2))
+        try:
+            visible_file = await visible_source_subtitles(
+                work_dir,
+                on_progress=lambda stage: progress(stage, max(0, translation_progress_start - 2)),
+            )
+        except (ImportError, RuntimeError, OSError):
+            visible_file = None
+    source_file = work_dir / "subtitles.source.srt"
+    timed_source = source_file if subtitle_file.name == 'subtitles.whisper.srt' and source_file.is_file() else subtitle_file
+    raw_events = parse_srt(visible_file or timed_source)
     source_file = work_dir / "subtitles.source.srt"
     if not source_file.is_file():
         write_srt(raw_events, source_file)
-    events = group_subtitle_events(
+    # Keep each displayed caption separate. Grouping and redistributing a long
+    # ASR segment invents timings and fills silent, caption-free scenes.
+    events = raw_events if visible_file else group_subtitle_events(
         raw_events,
         max_chars=grouped_max_chars,
         max_duration=grouped_max_duration,

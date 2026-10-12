@@ -1,8 +1,8 @@
-#define AppName "Editor"
+#define AppName "Lwent Editor"
 [Setup]
 AppId={{650AE6AF-6FCB-4612-B136-C0479F0737C7}
 AppName={#AppName}
-AppVersion=1.0.0
+AppVersion=1.1.0
 DefaultDirName={localappdata}\Programs\Editor
 DefaultGroupName=Editor
 PrivilegesRequired=lowest
@@ -24,7 +24,7 @@ CloseApplications=no
 [Files]
 Source: "{#Payload}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 [Icons]
-Name: "{group}\Editor"; Filename: "{app}\Editor.exe"
-Name: "{autodesktop}\Editor"; Filename: "{app}\Editor.exe"
+Name: "{group}\Lwent Editor"; Filename: "{app}\Editor.exe"
+Name: "{autodesktop}\Lwent Editor"; Filename: "{app}\Editor.exe"
 [Run]
-Filename: "{app}\Editor.exe"; Description: "Mở Editor"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Editor.exe"; Description: "Mở Lwent Editor"; Flags: nowait postinstall skipifsilent

@@ -25,4 +25,4 @@ opencv-python
 openai
 
 # Source subtitles read from the video image, with display timing.
-rapidocr-onnxruntime==1.2.3
+rapidocr==3.9.2

@@ -36,6 +36,7 @@ from app.services.store import job_store
 from app.services.media.downloader import download_preview_video
 
 router = APIRouter()
+_subtitle_realign_locks: dict[str, asyncio.Lock] = {}
 
 VIDEO_SUFFIXES = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
 
@@ -2004,6 +2005,38 @@ async def get_editor_subtitles(job_id: str, language: Literal["translated", "sou
     if not subtitle_file:
         raise HTTPException(status_code=404, detail="Phụ đề chưa sẵn sàng.")
     return FileResponse(subtitle_file, media_type="application/x-subrip", filename=f"{job_id}.srt", headers={"X-Subtitle-Timing": "speech" if language == "source" else "translated"})
+
+
+@router.get("/jobs/{job_id}/subtitles/quality", tags=["jobs"])
+async def get_subtitle_quality(job_id: str) -> dict:
+    if not job_store.get(job_id):
+        raise HTTPException(status_code=404, detail="Job not found.")
+    from app.services.subtitles.quality import recognition_report
+    return recognition_report(Path(settings.storage_dir) / "jobs" / job_id)
+
+
+@router.post("/jobs/{job_id}/subtitles/realign", tags=["jobs"])
+async def realign_editor_subtitles(job_id: str) -> FileResponse:
+    job = job_store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    if job.status != JobStatus.completed or not job.request.editor_subtitles_only:
+        raise HTTPException(status_code=409, detail="Chỉ cập nhật bản dịch phụ đề đã hoàn tất, không có thuyết minh.")
+    from app.services.subtitles.visible import visible_source_subtitles
+    from app.services.subtitles.source import _prepare_target_subtitles
+    work_dir = Path(settings.storage_dir) / "jobs" / job_id
+    visible = await visible_source_subtitles(work_dir)
+    if not visible:
+        raise HTTPException(status_code=422, detail="Không tìm thấy chữ gốc đủ rõ trên video để căn lại thời gian.")
+    async with _subtitle_realign_locks.setdefault(job_id, asyncio.Lock()):
+        output = await _prepare_target_subtitles(
+            visible, work_dir, job.request.source_language, lambda *_: None,
+            source_video=work_dir / "source.mp4", processing_mode=job.request.processing_mode,
+        )
+        pending = work_dir / "subtitles.editor.pending.srt"
+        shutil.copyfile(output, pending)
+        pending.replace(work_dir / "subtitles.editor.srt")
+        return FileResponse(output, media_type="application/x-subrip", headers={"X-Subtitle-Timing": "display"})
 
 
 @router.post("/jobs/{job_id}/evaluate", response_model=JobProgress, tags=["jobs"])

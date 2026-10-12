@@ -28,7 +28,7 @@ export function Onboarding() {
 							<Film className="size-5" aria-hidden="true" />
 						</div>
 						<DialogTitle className="text-base leading-snug">
-							{t("Welcome to OpenCut")}
+							{t("Welcome to Lwent Editor")}
 						</DialogTitle>
 					</div>
 				</DialogHeader>

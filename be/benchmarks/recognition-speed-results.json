@@ -1,0 +1,87 @@
+{
+  "date": "2026-10-11T12:05:06.811311",
+  "hardware": "RTX 3050 Ti Laptop 4 GB; approximately 20 GB RAM",
+  "sample_duration_seconds": 78.9,
+  "ocr": {
+    "baseline_algorithm": 7,
+    "optimized_algorithm": 12,
+    "before_seconds": 76.04108460000134,
+    "after_seconds": 59.63535219999903,
+    "time_reduction_percent": 21.57,
+    "same_text_and_all_timestamps": true,
+    "cues": 34,
+    "performance": {
+      "ocr_calls": 428,
+      "reused_frames": 433,
+      "recognition_only_calls": 565,
+      "scan_seconds": 59.54
+    },
+    "timing_scope": "Sequential runs on the same video. Baseline includes initial reader initialization; optimized run reuses the reader. Both use already downloaded weights."
+  },
+  "asr": {
+    "cold": {
+      "seconds": 19.592338900001778,
+      "cues": 34
+    },
+    "warm": {
+      "seconds": 6.646542700000282,
+      "cues": 34
+    },
+    "cached": {
+      "seconds": 0.03339060000143945,
+      "cues": 34
+    }
+  },
+  "asr_same_text_and_all_timestamps": true,
+  "ocr_cache": {
+    "cross_job_seconds": 0.031367299998237286,
+    "local_seconds": 0.007543900006567128,
+    "invalidates_changed_language": true
+  },
+  "live_api": {
+    "web_http": 200,
+    "backend_http": 200,
+    "source_export_http": 200,
+    "source_export_seconds": 0.057222699993872084,
+    "source_export_cues": 34,
+    "blank_at_75_seconds": true,
+    "quality_version": 12
+  },
+  "format_regressions": {
+    "en-portrait": {
+      "expected_cues": 3,
+      "baseline_cues": 3,
+      "optimized_cues": 3,
+      "baseline_cues_preserved": true
+    },
+    "vi-portrait": {
+      "expected_cues": 3,
+      "baseline_cues": 2,
+      "optimized_cues": 3,
+      "baseline_cues_preserved": true
+    },
+    "zh-landscape": {
+      "expected_cues": 3,
+      "baseline_cues": 3,
+      "optimized_cues": 3,
+      "baseline_cues_preserved": true
+    }
+  },
+  "format_test_scope": "Generated English portrait, Vietnamese portrait and Chinese landscape; language hints and transcript references were supplied for region discovery. Short captions last 0.3/0.4 seconds. This is a preservation test, not a broad accuracy benchmark. Vietnamese result was retested on algorithm 12 after the region-discovery fix. English and Chinese format results were measured before the final uncertainty-vote and fuzzy-region fixes.",
+  "verification": {
+    "backend_unit_tests_passed": 18,
+    "cache_corruption_detected": true,
+    "audio_language_and_mode_invalidate_cache": true,
+    "ocr_language_invalidates_cache": true,
+    "fuzzy_region_matching_rejects_unrelated_watermark": true,
+    "python_syntax": "passed",
+    "git_diff_check": "passed"
+  },
+  "limitations": [
+    "Times measure recognition, not complete translation or rendering.",
+    "Cache reuse requires the same content and recognition settings.",
+    "Cold ASR includes model initialization and alignment; warm ASR still performs real recognition.",
+    "No promised speedup on every video; uncertain OCR groups are rescanned at full density.",
+    "Accuracy on noisy speech and unseen videos was not measured by these speed tests."
+  ]
+}

@@ -8,6 +8,26 @@ Cải tiến:
 """
 from pathlib import Path
 import os
+import json
+from threading import RLock
+
+_model_lock = RLock()
+_loaded_model = None
+_loaded_model_key = None
+
+
+def _faster_model(model_class, **options):
+    global _loaded_model, _loaded_model_key
+    key = tuple(sorted(options.items()))
+    if _loaded_model is None or key != _loaded_model_key:
+        # Release a previous configuration before allocating another GPU model.
+        _loaded_model = None
+        _loaded_model_key = None
+        import gc
+        gc.collect()
+        _loaded_model = model_class(**options)
+        _loaded_model_key = key
+    return _loaded_model
 
 from app.core import settings
 from app.models.job import ProcessingMode
@@ -44,10 +64,7 @@ _INITIAL_PROMPTS: dict[str, str] = {
         "これは人々の会話です。"
         "固有名詞や名前はそのまま書き写してください。"
     ),
-    "auto": (
-        "A natural conversation. Keep all proper names, brand names unchanged. "
-        "这是一段对话，请准确转录。"
-    ),
+    "auto": "",
 }
 
 
@@ -74,24 +91,26 @@ class FasterWhisperAsr(AsrEngine):
 
         profile = get_processing_profile(processing_mode)
 
-        def transcribe() -> Path:
+        def run_transcribe() -> Path:
             _load_nvidia_runtime_dlls()
             try:
                 from faster_whisper import WhisperModel
-                model = WhisperModel(
-                    settings.whisper_model,
+                model = _faster_model(WhisperModel,
+                    model_size_or_path=settings.whisper_model,
                     device=settings.whisper_device,
                     compute_type=settings.whisper_compute_type,
                     local_files_only=settings.whisper_local_files_only,
+                    download_root=str(Path(__file__).resolve().parents[3] / "models" / "whisper"),
                     cpu_threads=max(1, int(os.environ.get("EDITOR_CPU_THREADS", os.cpu_count() or 1))),
                 )
             except (RuntimeError, ValueError) as exc:
                 if settings.whisper_device not in {"cuda", "auto"}:
                     raise
                 print("[ASR] GPU initialization unavailable; using CPU int8.")
-                model = WhisperModel(
-                    settings.whisper_model, device="cpu", compute_type="int8",
+                model = _faster_model(WhisperModel,
+                    model_size_or_path=settings.whisper_model, device="cpu", compute_type="int8",
                     local_files_only=settings.whisper_local_files_only,
+                    download_root=str(Path(__file__).resolve().parents[3] / "models" / "whisper"),
                     cpu_threads=max(1, int(os.environ.get("EDITOR_CPU_THREADS", os.cpu_count() or 1))),
                 )
             except ModuleNotFoundError as exc:
@@ -113,20 +132,25 @@ class FasterWhisperAsr(AsrEngine):
             whisper_language = None if language == "auto" else language
             initial_prompt = _INITIAL_PROMPTS.get(language, _INITIAL_PROMPTS["auto"])
 
+            audio_samples = _load_asr_audio(audio_file)
             segments_iter, info = model.transcribe(
-                _load_asr_audio(audio_file),
+                audio_samples,
                 language=whisper_language,
                 vad_filter=settings.whisper_vad_filter,
                 beam_size=profile.whisper_beam_size,
                 word_timestamps=True,
-                condition_on_previous_text=True,   # giúp giữ ngữ cảnh tên nhân vật
-                initial_prompt=initial_prompt,
+                condition_on_previous_text=False,  # do not carry invented outro text across silence
+                initial_prompt=initial_prompt or None,
                 # Giảm hallucination: segment im lặng bị bỏ
                 no_speech_threshold=0.6,
                 # Loại bỏ segment bị lặp (hallucination điển hình)
                 log_prob_threshold=-1.0,
             )
 
+            (output_file.parent / 'asr-metadata.json').write_text(json.dumps({
+                'engine': 'faster-whisper', 'model': settings.whisper_model,
+                'language': info.language, 'language_probability': info.language_probability,
+            }), encoding='utf-8')
             events: list[SubtitleEvent] = []
             source_events: list[SubtitleEvent] = []
             segment_count = 0
@@ -151,8 +175,31 @@ class FasterWhisperAsr(AsrEngine):
 
             if not events:
                 raise AsrError("Whisper không nhận diện được lời thoại để tạo phụ đề.")
+            if settings.whisper_align_words and processing_mode != "fast":
+                try:
+                    from stable_whisper.alignment import align
+                    aligned = align(
+                        model, audio_samples, text="\n".join(e.text for e in events),
+                        language=info.language, original_split=True, verbose=None,
+                    )
+                    aligned_cues = [cue for segment in aligned.segments
+                                    for cue in _source_word_cues(segment.words)]
+                    if aligned_cues and all(0 <= e.start < e.end <= len(audio_samples) / 16000 + .1 for e in aligned_cues):
+                        source_events = aligned_cues
+                        metadata_file = output_file.parent / 'asr-metadata.json'
+                        metadata = json.loads(metadata_file.read_text(encoding='utf-8'))
+                        metadata['alignment'] = 'stable-ts / forced alignment'
+                        metadata_file.write_text(json.dumps(metadata), encoding='utf-8')
+                except (ImportError, RuntimeError, ValueError, AttributeError) as exc:
+                    print(f"[ASR] Forced alignment unavailable; retaining word timestamps: {exc}")
             write_srt(source_events, output_file.parent / "subtitles.source.srt")
             return write_srt(events, output_file)
+
+        def transcribe():
+            # One active decode/alignment on the 4 GB GPU; the next job reuses
+            # its loaded model instead of allocating a second copy.
+            with _model_lock:
+                return run_transcribe()
 
         return await asyncio.to_thread(transcribe)
 
@@ -181,7 +228,9 @@ class OpenAIWhisperAsr(AsrEngine):
                 ) from exc
 
             requested_device = settings.whisper_device
-            device = requested_device if requested_device != "cuda" or torch.cuda.is_available() else "cpu"
+            device = ("cuda" if torch.cuda.is_available() else "cpu") if requested_device == "auto" else requested_device
+            if device == "cuda" and not torch.cuda.is_available():
+                device = "cpu"
             try:
                 model = whisper.load_model(getattr(settings, "whisper_fallback_model", None) or settings.whisper_model, device=device)
                 result = model.transcribe(
@@ -191,12 +240,16 @@ class OpenAIWhisperAsr(AsrEngine):
                     verbose=False,
                     beam_size=profile.whisper_beam_size,
                     word_timestamps=True,
-                    condition_on_previous_text=True,
+                    condition_on_previous_text=False,
                     initial_prompt=_INITIAL_PROMPTS.get(language, _INITIAL_PROMPTS["auto"]),
                 )
             except Exception as exc:
                 raise AsrError(f"Whisper dự phòng không nhận diện được audio: {exc}") from exc
 
+            (output_file.parent / 'asr-metadata.json').write_text(json.dumps({
+                'engine': 'openai-whisper', 'model': settings.whisper_fallback_model or settings.whisper_model,
+                'language': result.get('language', language),
+            }), encoding='utf-8')
             events: list[SubtitleEvent] = []
             source_events: list[SubtitleEvent] = []
             for segment in result.get("segments", []):
@@ -230,6 +283,20 @@ class ResilientAsr(AsrEngine):
         language: str,
         processing_mode: ProcessingMode | str | None = None,
     ) -> Path:
+        import asyncio
+        from app.services.ai import asr_cache
+        directory = await asyncio.to_thread(asr_cache.cache_directory, audio_file, language, processing_mode)
+        if directory is None:
+            return await self._recognize(audio_file, output_file, language, processing_mode)
+        async with asr_cache.lock(directory):
+            if await asyncio.to_thread(asr_cache.restore, directory, output_file):
+                print('[ASR] Reusing verified audio transcript.', flush=True)
+                return output_file
+            result = await self._recognize(audio_file, output_file, language, processing_mode)
+            await asyncio.to_thread(asr_cache.save, directory, result)
+            return result
+
+    async def _recognize(self, audio_file, output_file, language, processing_mode):
         try:
             return await FasterWhisperAsr().transcribe_to_srt(
                 audio_file, output_file, language, processing_mode

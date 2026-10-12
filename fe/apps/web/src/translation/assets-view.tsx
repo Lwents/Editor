@@ -35,6 +35,12 @@ type Job = {
 	stage: string;
 	error?: string;
 };
+type RecognitionReport = {
+	assessed: boolean;
+	engine?: string;
+	review_count: number;
+	cues: { start: number; end: number; needs_review: boolean; review_reasons: string[] }[];
+};
 type Binding = {
 	jobId?: string;
 	sceneId: string;
@@ -173,6 +179,16 @@ export function TranslationView() {
 	const mounted = useRef(false);
 	const importing = useRef(false);
 	const autoImportAttempt = useRef<string | null>(null);
+	const [recognition, setRecognition] = useState<RecognitionReport | null>(null);
+	useEffect(() => {
+		setRecognition(null);
+		if (!binding?.jobId || job?.status !== "completed" || busy) return;
+		let stopped = false;
+		void api<RecognitionReport>(`/jobs/${binding.jobId}/subtitles/quality`)
+			.then((report) => { if (!stopped) setRecognition(report); })
+			.catch(() => {});
+		return () => { stopped = true; };
+	}, [binding?.jobId, job?.status, busy]);
 	useEffect(() => {
 		mounted.current = true;
 		return () => {
@@ -525,6 +541,40 @@ export function TranslationView() {
 		toast.success(
 			`Đã chia thành ${insertions.length} đoạn sub ngắn. Ctrl+Z để hoàn tác.`,
 		);
+	}
+	async function realignSubtitles() {
+		if (!binding?.jobId || !track || !cues.length || busy) return;
+		const currentTrack = track;
+		setBusy(true);
+		setError("");
+		setStage("Đang dịch lại theo chữ gốc và mốc hiển thị…");
+		try {
+			const response = await fetch(`${API}/jobs/${binding.jobId}/subtitles/realign`, { method: "POST" });
+			if (!response.ok) {
+				const data = await response.json().catch(() => null);
+				throw new Error(data?.detail || "Không thể căn lại phụ đề.");
+			}
+			const parsed = parseSubtitleFile({ input: await response.text(), fileName: "realigned.srt" });
+			if (!isCurrentProject() || editor.scenes.getActiveScene().id !== binding.sceneId) return;
+			if (!parsed.captions.length) throw new Error("Không có phụ đề để cập nhật.");
+			const canvasSize = editor.project.getActive().settings.canvasSize;
+			const captions = shortLines ? parsed.captions.flatMap((c) => shortSubtitleCues(c, canvasSize)) : parsed.captions;
+			const insertions = captions.map((caption, index) => new InsertElementCommand({
+				placement: { mode: "explicit", trackId: currentTrack.id },
+				element: buildSubtitleTextElement({ caption, index, canvasSize, fitToVideo: true }),
+			}));
+			editor.command.execute({ command: new BatchCommand([
+				new DeleteElementsCommand({ elements: cues.map((c) => ({ trackId: currentTrack.id, elementId: c.id })) }),
+				...insertions,
+			]) });
+			await editor.save.flush();
+			toast.success("Đã cập nhật sub theo chữ gốc trên video. Ctrl+Z để hoàn tác.");
+		} catch (e) {
+			setError(e instanceof Error ? e.message : "Không thể căn lại phụ đề.");
+		} finally {
+			setBusy(false);
+			setStage("");
+		}
 	}
 	async function importResult(withVoice = binding?.voice) {
 		if (!binding?.jobId || importing.current || binding.trackId) return;
@@ -1074,6 +1124,14 @@ export function TranslationView() {
 			<SubtitleTools trackId={track?.id} />
 			{cues.length > 0 && (
 				<section id="translation-review" className="space-y-3">
+					{binding?.jobId && !binding.voice && (
+						<div className="space-y-2">
+							<Button className="w-full" variant="outline" disabled={locked} onClick={() => void realignSubtitles()}>
+								Căn lại sub theo chữ gốc trên video
+								</Button>
+							<p className="text-xs text-muted-foreground">Dịch lại và thay hàng phụ đề hiện tại theo lúc chữ gốc xuất hiện. Các đoạn không có chữ sẽ để trống. Ctrl+Z để hoàn tác.</p>
+						</div>
+					)}
 					<Button
 						className="w-full"
 						variant="outline"
@@ -1085,6 +1143,17 @@ export function TranslationView() {
 					<h3 className="font-semibold text-sm">
 						Kiểm tra bản dịch · {cues.length} đoạn
 					</h3>
+					{recognition?.assessed && (
+						<div className="rounded-lg border p-3 text-xs space-y-2">
+							<p>{recognition.engine} · {recognition.review_count} đoạn cần kiểm tra</p>
+							<p className="text-muted-foreground">Đối chiếu chữ trên hình với lời thoại. Đây là cảnh báo cần duyệt, không phải tỷ lệ chính xác.</p>
+							{recognition.cues.filter((c) => c.needs_review).map((c, i) => (
+								<button key={i} type="button" className="block text-left text-amber-700 dark:text-amber-400 underline" onClick={() => editor.playback.seek({ time: mediaTimeFromSeconds({ seconds: c.start }) })}>
+									{c.start.toFixed(2)}s · {c.review_reasons.join("; ")}
+								</button>
+							))}
+						</div>
+					)}
 					<div className="rounded-lg border bg-accent/40 p-3 space-y-2">
 						<p className="text-xs">
 							Bản dịch đã nằm trên video. Bấm từng đoạn bên dưới để xem, sửa chữ

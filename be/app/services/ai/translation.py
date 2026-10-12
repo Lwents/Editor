@@ -8,6 +8,7 @@ compatibility tests but are never selected by ``get_translation_engine``.
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
 import json
 import re
@@ -30,6 +31,13 @@ from app.services.subtitles.timing import SubtitleEvent
 
 class TranslationError(RuntimeError):
     pass
+
+
+class TranslationBatchStructureError(TranslationError):
+    def __init__(self, message: str, valid_items: dict[int, str] | None = None, updates: dict | None = None):
+        super().__init__(message)
+        self.valid_items = valid_items or {}
+        self.updates = updates or {}
 
 
 # ─── Engine classes ───────────────────────────────────────────────────────────
@@ -481,6 +489,9 @@ async def _translate_gemini_batch(
         "- Trả đúng JSON object gồm items và memory_updates.\n"
         "- items phải giữ nguyên đủ id, đúng thứ tự và số lượng của CURRENT_ITEMS; không gộp/tách/thêm câu.\n"
         "- Mỗi item có dạng {\"id\":1,\"text\":\"...\"}; text chỉ chứa bản dịch, không giải thích.\n"
+        "- Tuyệt đối không trả text rỗng hay bỏ id, kể cả câu ngắn, tiếng cảm thán hoặc chữ nhận diện khó hiểu. "
+        "Nếu là tên/logo/ký tự Latin không có nghĩa rõ ràng, giữ nguyên chữ đó; không tự xóa. "
+        "Dịch cả câu rời ngữ cảnh; CHARACTER_BIBLE chỉ hướng dẫn xưng hô, không quyết định bỏ câu.\n"
         "- Giữ nguyên ý, không bịa tình tiết, không thêm tên người nói nếu câu nguồn không có.\n"
         "- Dùng CHARACTER_BIBLE và MEMORY làm sự thật ưu tiên cho tên, biệt danh, giới tính, quan hệ và xưng hô.\n"
         "- CHARACTER_NAME_CONTRACT là bắt buộc: khi nhắc nhân vật phải chép đúng canonical_names, không dịch nghĩa tên riêng, "
@@ -501,6 +512,7 @@ async def _translate_gemini_batch(
         "memory": memory,
         "previous_context": previous_context,
         "current_items": batch,
+        "required_ids": [int(item["id"]) for item in batch],
         "next_context": next_context,
     }
     response = await client.chat.completions.create(
@@ -517,7 +529,7 @@ async def _translate_gemini_batch(
     data = _loads_json_object(content)
     items = data.get("items")
     if not isinstance(items, list):
-        raise TranslationError("AI không trả về danh sách items.")
+        raise TranslationBatchStructureError("AI không trả về danh sách items.")
 
     expected_ids = [int(item["id"]) for item in batch]
     by_id: dict[int, str] = {}
@@ -537,9 +549,13 @@ async def _translate_gemini_batch(
     missing = [item_id for item_id in expected_ids if item_id not in by_id]
     unexpected = [item_id for item_id in by_id if item_id not in expected_ids]
     if missing or unexpected or duplicate_ids or len(items) != len(batch):
-        raise TranslationError(
+        raise TranslationBatchStructureError(
             "AI trả sai cấu trúc batch "
-            f"(thiếu={missing}, thừa={unexpected}, trùng={sorted(duplicate_ids)})."
+            f"(thiếu={missing}, thừa={unexpected}, trùng={sorted(duplicate_ids)}).",
+            valid_items={item_id: text for item_id, text in by_id.items()
+                         if item_id in expected_ids and item_id not in duplicate_ids
+                         and not (target_language.lower() == 'vi' and _looks_chinese(text))},
+            updates=data.get('memory_updates') if isinstance(data.get('memory_updates'), dict) else {},
         )
     translated = [by_id[item_id] for item_id in expected_ids]
     if target_language.lower() == "vi" and any(_looks_chinese(text) for text in translated):
@@ -577,6 +593,35 @@ async def _translate_gemini_batch_with_retries(
                 ),
                 timeout=request_timeout_seconds + 5,
             )
+        except TranslationBatchStructureError as exc:
+            if len(batch) > 1:
+                # Keep validated translations and retry only missing/invalid
+                # IDs. If none were usable, halve the request down to one cue.
+                # Every recursive request is smaller, so recovery is bounded.
+                pending = [item for item in batch if int(item['id']) not in exc.valid_items]
+                if not pending:
+                    # Extraneous/duplicate output still requires a clean retry.
+                    last_error = exc
+                    continue
+                if len(pending) == len(batch):
+                    chunks = [pending[:len(pending) // 2], pending[len(pending) // 2:]]
+                else:
+                    chunks = [pending]
+                recovered = dict(exc.valid_items)
+                combined_updates = copy.deepcopy(exc.updates)
+                updated_memory = copy.deepcopy(memory)
+                _merge_translation_memory(updated_memory, combined_updates)
+                for chunk in chunks:
+                    chunk_texts, chunk_updates = await _translate_gemini_batch_with_retries(
+                        client, chunk, source_language, target_language, context, updated_memory,
+                        previous_context, next_context, retries=retries,
+                        request_timeout_seconds=request_timeout_seconds,
+                    )
+                    recovered.update({int(item['id']): text for item, text in zip(chunk, chunk_texts)})
+                    _merge_translation_memory(combined_updates, chunk_updates)
+                    _merge_translation_memory(updated_memory, chunk_updates)
+                return [recovered[int(item['id'])] for item in batch], combined_updates
+            last_error = exc
         except TimeoutError as exc:
             last_error = TranslationError(
                 f"9router không phản hồi trong {int(request_timeout_seconds)} giây"

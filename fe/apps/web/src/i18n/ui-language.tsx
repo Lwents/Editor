@@ -277,7 +277,7 @@ export const vietnamese: Record<string, string> = {
 	"Import video": "Nhập video",
 	"Edit subtitles": "Sửa phụ đề",
 	"Export video": "Xuất video",
-	"Welcome to OpenCut": "Chào mừng đến OpenCut",
+	"Welcome to Lwent Editor": "Chào mừng đến Lwent Editor",
 	"Edit, translate and review your video": "Chỉnh sửa, dịch và kiểm tra video",
 	"Import a video, translate subtitles, then review each segment before exporting.":
 		"Nhập video, dịch phụ đề rồi kiểm tra từng đoạn trước khi xuất.",

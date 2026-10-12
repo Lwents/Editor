@@ -18,6 +18,10 @@ if(-not(Test-Path "$BuildRoot\python\python.exe")){
 $env:PYTHONNOUSERSITE='1';$env:PYTHONUTF8='1'
 & $Uv pip install --break-system-packages --python "$BuildRoot\python\python.exe" -r "$Repo\be\requirements.txt" -r "$Repo\be\requirements-zerotts.txt"
 if($LASTEXITCODE -ne 0){throw 'Python dependencies failed'}
+& $Uv pip install --break-system-packages --python "$BuildRoot\python\python.exe" torchvision==0.23.0 gdown einops
+if($LASTEXITCODE -ne 0){throw 'VietOCR dependencies failed'}
+& $Uv pip install --break-system-packages --no-deps --python "$BuildRoot\python\python.exe" vietocr==0.3.13
+if($LASTEXITCODE -ne 0){throw 'VietOCR installation failed'}
 & robocopy.exe "$Repo\fe" "$BuildRoot\fe" /E /XD node_modules .next .next-package target .git .cargo-tools /XF '.env*' '*.tsbuildinfo' /NFL /NDL /NJH /NJS /NP|Out-Null
 if($LASTEXITCODE -ge 8){throw 'Frontend copy failed'}
 $Bun=@(

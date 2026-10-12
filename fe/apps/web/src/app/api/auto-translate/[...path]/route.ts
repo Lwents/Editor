@@ -11,13 +11,16 @@ async function forward(
 		(request.method === "GET" &&
 			(route === "health" ||
 				route === "api/jobs" ||
+				route === "api/settings/ai" ||
 				route === "api/voices" ||
-				/^api\/jobs\/[a-zA-Z0-9_-]+(\/(subtitles|download))?$/.test(route))) ||
+				/^api\/jobs\/[a-zA-Z0-9_-]+(\/(subtitles(?:\/quality)?|download))?$/.test(route))) ||
 		(request.method === "POST" &&
 			(route === "api/uploads/video" ||
+				route === "api/settings/ai" ||
+				route === "api/settings/ai/test" ||
 				route === "api/voices/preview" ||
 				route === "api/jobs" ||
-				/^api\/jobs\/[a-zA-Z0-9_-]+\/cancel$/.test(route)));
+				/^api\/jobs\/[a-zA-Z0-9_-]+\/(cancel|subtitles\/realign)$/.test(route)));
 	if (!allowed)
 		return Response.json(
 			{ detail: "Đường dẫn không được hỗ trợ." },

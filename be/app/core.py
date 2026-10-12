@@ -1,9 +1,11 @@
+import os
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
+AI_CONFIG_FILE = Path(os.environ.get("EDITOR_AI_CONFIG_FILE") or BACKEND_DIR / ".env")
 DEFAULT_AI_MODEL = "ag/gemini-3.8-flash-medium"
 DEFAULT_REVIEW_AI_MODEL = "ag/gemini-pro-agent"
 
@@ -49,9 +51,10 @@ class Settings(BaseSettings):
     douyin_external_downloader_services: str = "unduhtiktok,douyinwtf,tikwm"
     douyin_external_downloader_custom_urls: str | None = None
     douyin_external_downloader_timeout_seconds: int = 45
-    whisper_model: str = "base"
+    whisper_model: str = "turbo"
     whisper_fallback_model: str | None = None
-    whisper_device: str = "cpu"
+    whisper_device: str = "auto"
+    whisper_align_words: bool = True
     whisper_compute_type: str = "int8"
     whisper_beam_size: int = 5
     whisper_vad_filter: bool = True
@@ -86,4 +89,4 @@ class Settings(BaseSettings):
     )
 
 
-settings = Settings()
+settings = Settings(_env_file=[BACKEND_DIR / ".env", AI_CONFIG_FILE])

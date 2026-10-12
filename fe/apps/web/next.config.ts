@@ -3,6 +3,7 @@ import { withBotId } from "botid/next/config";
 import { withContentCollections } from "@content-collections/next";
 
 const nextConfig: NextConfig = {
+	devIndicators: false,
 	distDir: process.env.EDITOR_BUILD_DIR || ".next",
 	compiler: {
 		removeConsole: process.env.NODE_ENV === "production",

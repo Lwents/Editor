@@ -22,6 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import router
+from app.api.ai_settings import router as ai_settings_router
 from app.core import settings
 
 import asyncio
@@ -75,6 +76,7 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="/api")
+app.include_router(ai_settings_router, prefix="/api")
 
 storage_videos = Path(settings.storage_dir) / "uploads" / "videos"
 storage_videos.mkdir(parents=True, exist_ok=True)
