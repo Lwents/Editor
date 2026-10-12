@@ -12,12 +12,14 @@ async function forward(
 			(route === "health" ||
 				route === "api/jobs" ||
 				route === "api/settings/ai" ||
+				route === "api/settings/ai/browser/status" ||
 				route === "api/voices" ||
 				/^api\/jobs\/[a-zA-Z0-9_-]+(\/(subtitles(?:\/quality)?|download))?$/.test(route))) ||
 		(request.method === "POST" &&
 			(route === "api/uploads/video" ||
 				route === "api/settings/ai" ||
 				route === "api/settings/ai/test" ||
+				route === "api/settings/ai/browser/open" ||
 				route === "api/voices/preview" ||
 				route === "api/jobs" ||
 				/^api\/jobs\/[a-zA-Z0-9_-]+\/(cancel|subtitles\/realign)$/.test(route)));

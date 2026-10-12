@@ -97,7 +97,7 @@ async def _run_with_heartbeat(
     elapsed = 0
     try:
         while not running_task.done():
-            percent = min(end_percent, start_percent + elapsed)
+            percent = start_percent
             progress(stage, percent)
             await asyncio.sleep(5)
             elapsed += 1
@@ -123,6 +123,7 @@ async def get_or_create_subtitles(
     processing_mode: ProcessingMode | str | None = None,
     translation_progress_start: int = 68,
     translation_progress_end: int = 69,
+    on_measurement: Callable[[float, float], None] | None = None,
 ) -> Path:
     target_file = work_dir / f"subtitles.{settings.target_language}.srt"
     if target_file.exists() and target_file.stat().st_size > 0:
@@ -141,6 +142,7 @@ async def get_or_create_subtitles(
                 processing_mode,
                 translation_progress_start,
                 translation_progress_end,
+                on_measurement=on_measurement,
             )
         except SubtitleSourceError:
             progress("Nền tảng không có phụ đề phù hợp, tự tạo phụ đề bằng Whisper", 58)
@@ -157,6 +159,7 @@ async def get_or_create_subtitles(
             processing_mode,
             translation_progress_start,
             translation_progress_end,
+            on_measurement=on_measurement,
         )
 
     asr_task = get_asr_engine().transcribe_to_srt(
@@ -182,6 +185,7 @@ async def get_or_create_subtitles(
         processing_mode,
         translation_progress_start,
         translation_progress_end,
+        on_measurement=on_measurement,
     )
 
 
@@ -201,6 +205,34 @@ async def _prepare_target_subtitles(
     processing_mode: ProcessingMode | str | None = None,
     translation_progress_start: int = 68,
     translation_progress_end: int = 69,
+    on_measurement: Callable[[float, float], None] | None = None,
+) -> Path:
+    try:
+        return await _prepare_target_subtitles_impl(
+            subtitle_file, work_dir, source_language, progress, source_video,
+            processing_mode, translation_progress_start, translation_progress_end,
+            on_measurement=on_measurement,
+        )
+    finally:
+        if settings.translation_engine.lower() == 'gemini_web':
+            from app.services.ai.gemini_web import browser
+            try:
+                await browser.close()
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception('Could not close dedicated Gemini browser')
+
+
+async def _prepare_target_subtitles_impl(
+    subtitle_file: Path,
+    work_dir: Path,
+    source_language: str,
+    progress: Callable[[str, int], None],
+    source_video: Path | None = None,
+    processing_mode: ProcessingMode | str | None = None,
+    translation_progress_start: int = 68,
+    translation_progress_end: int = 69,
+    on_measurement: Callable[[float, float], None] | None = None,
 ) -> Path:
     grouped_max_chars = max(settings.subtitle_group_max_chars, 42)
     grouped_max_duration = max(settings.subtitle_group_max_duration, 3.2)
@@ -213,12 +245,18 @@ async def _prepare_target_subtitles(
             visible_file = await visible_source_subtitles(
                 work_dir,
                 on_progress=lambda stage: progress(stage, max(0, translation_progress_start - 2)),
+                on_measurement=on_measurement,
             )
         except (ImportError, RuntimeError, OSError):
             visible_file = None
     source_file = work_dir / "subtitles.source.srt"
     timed_source = source_file if subtitle_file.name == 'subtitles.whisper.srt' and source_file.is_file() else subtitle_file
     raw_events = parse_srt(visible_file or timed_source)
+    visual_context = {}
+    if visible_file and source_video is not None and settings.translation_engine.lower() == 'gemini_web':
+        from app.services.subtitles.vision_review import review_visible_captions
+        raw_events, visual_context = await review_visible_captions(source_video, raw_events, work_dir, progress)
+        write_srt(raw_events, work_dir / 'subtitles.source.verified.srt')
     source_file = work_dir / "subtitles.source.srt"
     if not source_file.is_file():
         write_srt(raw_events, source_file)
@@ -244,8 +282,9 @@ async def _prepare_target_subtitles(
     ):
         return grouped_file
 
-    progress("AI nhận diện tên phim, nhân vật và vai vế", max(0, translation_progress_start - 1))
+    progress("Chuẩn bị phụ đề để gửi Gemini Web" if settings.translation_engine == 'gemini_web' else "AI nhận diện tên phim, nhân vật và vai vế", max(0, translation_progress_start - 1))
     context = await analyze_video_context(source_video, events, work_dir)
+    context.update(visual_context)
 
     progress("Dịch phụ đề sang tiếng Việt", translation_progress_start)
     def translation_progress(completed: int, total: int) -> None:
@@ -259,6 +298,9 @@ async def _prepare_target_subtitles(
             f"Dịch phụ đề sang tiếng Việt ({completed}/{max(total, 1)} batch, đã lưu checkpoint)",
             percent,
         )
+
+        if on_measurement is not None:
+            on_measurement(completed, total)
 
     translated_events = await get_translation_engine().translate_events(
         events,

@@ -6,6 +6,7 @@ import os
 import tempfile
 import time
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
 from dotenv import set_key
@@ -32,6 +33,8 @@ def local_request(request: Request) -> None:
 
 
 class AiConfig(BaseModel):
+    engine: Literal['gemini', 'gemini_web'] = 'gemini'
+    gemini_web_background: bool = False
     api_url: str = Field(min_length=1, max_length=2048)
     model: str = Field(min_length=1, max_length=200)
     api_key: str | None = Field(default=None, max_length=4096)
@@ -71,7 +74,7 @@ def effective_key(config: AiConfig) -> str:
 
 
 def public_config() -> dict:
-    return {"api_url": settings.ninerouter_api_url, "model": settings.ai_model, "has_api_key": bool(settings.ninerouter_api_key)}
+    return {"api_url": settings.ninerouter_api_url, "model": settings.ai_model, "has_api_key": bool(settings.ninerouter_api_key), "engine": settings.translation_engine if settings.translation_engine == 'gemini_web' else 'gemini', "gemini_web_background": settings.gemini_web_background, "gemini_web_background_supported": os.name == 'nt'}
 
 
 @router.get("/settings/ai", dependencies=[Depends(local_request)])
@@ -84,7 +87,7 @@ async def save_config(config: AiConfig) -> dict:
     async with _config_lock:
         if any(job.status in {"queued", "processing"} for job in job_store.list()):
             raise HTTPException(409, "Đợi tác vụ hiện tại hoàn tất trước khi đổi cấu hình AI.")
-        key = effective_key(config)
+        key = effective_key(config) if config.engine == 'gemini' else settings.ninerouter_api_key
         env_file = AI_CONFIG_FILE
         temp_path: Path | None = None
         try:
@@ -92,7 +95,10 @@ async def save_config(config: AiConfig) -> dict:
             os.close(fd)
             temp_path = Path(name)
             temp_path.write_text(env_file.read_text(encoding="utf-8") if env_file.exists() else "", encoding="utf-8")
-            for name, value in {"AUTO_TRANSLATE_NINEROUTER_API_URL": config.api_url, "AUTO_TRANSLATE_NINEROUTER_API_KEY": key, "AUTO_TRANSLATE_AI_MODEL": config.model}.items():
+            values = {"AUTO_TRANSLATE_TRANSLATION_ENGINE": config.engine, "AUTO_TRANSLATE_GEMINI_WEB_BACKGROUND": str(config.gemini_web_background).lower()}
+            if config.engine == 'gemini':
+                values.update({"AUTO_TRANSLATE_NINEROUTER_API_URL": config.api_url, "AUTO_TRANSLATE_NINEROUTER_API_KEY": key, "AUTO_TRANSLATE_AI_MODEL": config.model})
+            for name, value in values.items():
                 set_key(str(temp_path), name, value, quote_mode="always")
             os.replace(temp_path, env_file)
         except OSError:
@@ -100,14 +106,34 @@ async def save_config(config: AiConfig) -> dict:
         finally:
             if temp_path:
                 temp_path.unlink(missing_ok=True)
-        settings.ninerouter_api_url = config.api_url
-        settings.ninerouter_api_key = key
-        settings.ai_model = config.model
+        settings.translation_engine = config.engine
+        settings.gemini_web_background = config.gemini_web_background
+        if config.engine == 'gemini':
+            settings.ninerouter_api_url = config.api_url
+            settings.ninerouter_api_key = key
+            settings.ai_model = config.model
         return {**public_config(), "message": "Đã lưu. Cấu hình mới được dùng cho lần dịch tiếp theo."}
 
 
 @router.post("/settings/ai/test", dependencies=[Depends(local_request)])
 async def test_config(config: AiConfig) -> dict:
+    if config.engine == 'gemini_web':
+        from app.services.ai.gemini_web import browser, GeminiWebError
+        import json
+        started = time.perf_counter()
+        try:
+            content = await browser.complete([{'role': 'user', 'content': json.dumps({'current_items': [{'id': 1, 'source': '你好'}], 'instruction': 'Dịch sang tiếng Việt. Trả items và memory_updates.'}, ensure_ascii=False)}], 60, background=config.gemini_web_background)
+            data = json.loads(content)
+            valid = len(data.get('items', [])) == 1 and data['items'][0].get('id') == 1 and bool(str(data['items'][0].get('text', '')).strip())
+            return {'ok': valid, 'message': 'Gemini Web đã trả bản dịch thử.' if valid else 'Gemini đã trả lời nhưng định dạng bản dịch chưa đúng.', 'latency_ms': round((time.perf_counter() - started) * 1000)}
+        except (GeminiWebError, ImportError):
+            return {'ok': False, 'message': 'Gemini chưa sẵn sàng hoặc chưa trả đúng kết quả. Mở Gemini, kiểm tra đăng nhập và thử lại.'}
+        finally:
+            try:
+                await browser.close()
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception('Could not close Gemini browser after connection test')
     from openai import AsyncOpenAI, APIConnectionError, APITimeoutError, APIStatusError
     key = effective_key(config)
     started = time.perf_counter()
@@ -126,3 +152,21 @@ async def test_config(config: AiConfig) -> dict:
         return {"ok": False, "message": messages.get(exc.status_code, f"API trả lỗi HTTP {exc.status_code}. Kiểm tra nhà cung cấp AI.")}
     except Exception:
         return {"ok": False, "message": "Phản hồi API không hợp lệ hoặc model chưa hỗ trợ chat completions."}
+
+
+@router.post('/settings/ai/browser/open', dependencies=[Depends(local_request)])
+async def open_browser() -> dict:
+    from app.services.ai.gemini_web import browser, GeminiWebError
+    try:
+        return await browser.open()
+    except (GeminiWebError, ImportError) as exc:
+        raise HTTPException(409, str(exc) if isinstance(exc, GeminiWebError) else 'Thiếu Playwright. Cài lại be/requirements.txt.') from None
+
+
+@router.get('/settings/ai/browser/status', dependencies=[Depends(local_request)])
+async def browser_status() -> dict:
+    from app.services.ai.gemini_web import browser, GeminiWebError
+    try:
+        return await browser.status()
+    except GeminiWebError as exc:
+        return {'ok': False, 'ready': False, 'message': str(exc)}

@@ -26,3 +26,4 @@ openai
 
 # Source subtitles read from the video image, with display timing.
 rapidocr==3.9.2
+playwright==1.63.0

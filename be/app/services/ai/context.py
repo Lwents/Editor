@@ -17,6 +17,10 @@ async def analyze_video_context(
     events: list[SubtitleEvent],
     work_dir: Path,
 ) -> dict:
+    if settings.translation_engine.lower() == 'gemini_web':
+        # The browser receives subtitle context directly. Do not make hidden
+        # API requests when the user chooses browser translation without a key.
+        return {}
     if not video_file or not video_file.exists() or not settings.ninerouter_api_key:
         return {}
 

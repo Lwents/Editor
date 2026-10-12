@@ -2,7 +2,7 @@
 [Setup]
 AppId={{650AE6AF-6FCB-4612-B136-C0479F0737C7}
 AppName={#AppName}
-AppVersion=1.1.0
+AppVersion=1.3.0
 DefaultDirName={localappdata}\Programs\Editor
 DefaultGroupName=Editor
 PrivilegesRequired=lowest

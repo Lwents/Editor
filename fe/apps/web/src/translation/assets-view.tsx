@@ -32,6 +32,10 @@ type Job = {
 	job_id: string;
 	status: string;
 	progress: number;
+	stage_percent?: number | null;
+	progress_changed_at?: string | null;
+	updated_at?: string;
+	created_at?: string;
 	stage: string;
 	error?: string;
 };
@@ -79,6 +83,7 @@ export function TranslationView() {
 	const [ready, setReady] = useState(false);
 	const [job, setJob] = useState<Job | null>(null);
 	const [busy, setBusy] = useState(false);
+	const [now, setNow] = useState(Date.now());
 	const [stage, setStage] = useState("");
 	const [error, setError] = useState("");
 	const [voice, setVoice] = useState(false);
@@ -263,6 +268,14 @@ export function TranslationView() {
 	}, [binding?.jobId]);
 	const running =
 		job && !["completed", "failed", "cancelled"].includes(job.status);
+	useEffect(() => {
+		if (!running) return;
+		const timer = setInterval(() => setNow(Date.now()), 1000);
+		return () => clearInterval(timer);
+	}, [Boolean(running)]);
+	const secondsWithoutProgress = Math.max(0, Math.floor((now - Date.parse(job?.progress_changed_at || job?.updated_at || new Date(now).toISOString())) / 1000));
+	const secondsWithoutContact = Math.max(0, Math.floor((now - Date.parse(job?.updated_at || new Date(now).toISOString())) / 1000));
+	const measuredPercent = job?.status === "completed" ? 100 : job?.stage_percent;
 	const locked = busy || Boolean(running) || Boolean(binding?.jobId && !job);
 	const track = scene?.tracks.overlay.find(
 		(t) => t.type === "text" && (!binding?.trackId || t.id === binding.trackId),
@@ -934,12 +947,25 @@ export function TranslationView() {
 			</p>
 			{(busy || job) && (
 				<div className="rounded-md border p-3 space-y-2" aria-live="polite">
-					<p className="text-xs">{stage || job?.stage}</p>
+					<div className="flex items-start justify-between gap-3">
+						<p className="text-xs">{stage || job?.stage}</p>
+						<span className="shrink-0 text-xs font-semibold tabular-nums">
+							{measuredPercent != null ? `${measuredPercent}%` : "Đang xử lý…"}
+						</span>
+					</div>
 					<progress
 						className="w-full accent-blue-500"
 						max={100}
-						value={job?.progress || 0}
+						aria-label="Tiến độ bước hiện tại"
+						value={measuredPercent ?? undefined}
 					/>
+					{running && (
+						<p className="text-xs text-muted-foreground tabular-nums">
+							{measuredPercent != null ? "Tiến độ bước hiện tại. " : "Bước này chưa cung cấp %; đang chờ kết quả. "}
+							Chưa có tiến triển mới: {secondsWithoutProgress}s.
+							{secondsWithoutContact >= 15 && ` Chưa nhận cập nhật từ bộ xử lý: ${secondsWithoutContact}s.`}
+						</p>
+					)}
 					{running && (
 						<Button
 							variant="outline"

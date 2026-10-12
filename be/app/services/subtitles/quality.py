@@ -11,7 +11,10 @@ from app.services.subtitles.timing import parse_srt
 
 def recognition_report(work_dir: Path) -> dict:
     try:
-        report = json.loads((work_dir / 'subtitles.recognition.json').read_text(encoding='utf-8'))
+        report_file = work_dir / 'subtitles.recognition.verified.json'
+        if not report_file.is_file():
+            report_file = work_dir / 'subtitles.recognition.json'
+        report = json.loads(report_file.read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return {'assessed': False, 'cues': [], 'review_count': 0,
                 'message': 'Chưa có đánh giá OCR; phụ đề có thể đang dùng mốc lời thoại.'}

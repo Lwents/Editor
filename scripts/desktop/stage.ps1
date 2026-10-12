@@ -13,8 +13,10 @@ CopyTree "$BuildRoot\electron" $Payload
 Copy-Item "$Payload\electron.exe" "$Payload\Editor.exe" -Force
 Remove-Item "$Payload\electron.exe" -Force
 CopyTree $PSScriptRoot "$Payload\resources\app"
+& "$BuildRoot\python\python.exe" "$PSScriptRoot\package-update.py" $Payload --runtime-only
+if($LASTEXITCODE -ne 0){throw 'Runtime manifest failed'}
 foreach($Old in @('settings.html','settings.cjs','preload.cjs')) { Remove-Item (Join-Path "$Payload\resources\app" $Old) -Force -ErrorAction SilentlyContinue }
-Get-ChildItem "$Payload\resources\app" -File |Where-Object {$_.Extension -in @('.ps1','.iss') -or $_.Name -eq 'package-release.py'} |Remove-Item -Force
+Get-ChildItem "$Payload\resources\app" -File |Where-Object {$_.Extension -in @('.ps1','.iss') -or $_.Name -in @('package-release.py','package-update.py')} |Remove-Item -Force
 Copy-Item "$Repo\fe\LICENSE" "$Payload\OPENCUT-LICENSE.txt" -Force
 CopyTree "$BuildRoot\python" "$Bundle\python"
 # Torch ships the CUDA DLLs required by both Torch and CTranslate2. Avoid
@@ -42,10 +44,13 @@ foreach($Name in @('msvcp140.dll','msvcp140_1.dll','msvcp140_2.dll','vcruntime14
 }
 Get-ChildItem "$Bundle\frontend" -Recurse -Force -File | Where-Object {$_.Name -like '.env*' -or $_.Name -like '*.map'} | Remove-Item -Force
 @'
-Lwent Editor 1.1 - Windows 10/11 x64
+Lwent Editor 1.3 - Windows 10/11 x64
 Open Editor.exe. Editing, subtitles and export run locally.
-AI translation requires your own OpenAI-compatible endpoint and API key.
+AI translation supports Gemini Web login or your own OpenAI-compatible API.
+Gemini Web requires installed Google Chrome or Microsoft Edge and Internet.
 Configure them using the AI settings icon in the editor toolbar.
+The app checks GitHub Releases for updates; Editor > Check for updates checks manually.
+Code updates keep your models, projects and AI settings.
 VieNeu and ZeroTTS models are bundled. Edge voices require Internet.
 Projects, settings and logs are stored in your Windows user profile.
 GPU support depends on drivers; compatible CPU mode is selected automatically when needed.

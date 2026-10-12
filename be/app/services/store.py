@@ -56,8 +56,13 @@ class JobStore:
         with self._lock:
             job = self._jobs[job_id]
             data = job.model_dump()
+            if "stage" in changes and changes["stage"] != job.stage and "stage_percent" not in changes:
+                changes["stage_percent"] = None
             data.update(changes)
-            data["updated_at"] = datetime.now(UTC)
+            now = datetime.now(UTC)
+            if any(data.get(key) != getattr(job, key) for key in ("stage", "progress", "stage_percent", "status")):
+                data["progress_changed_at"] = now
+            data["updated_at"] = now
             updated = JobProgress.model_validate(data)
             self._jobs[job_id] = updated
             self._save_unlocked()

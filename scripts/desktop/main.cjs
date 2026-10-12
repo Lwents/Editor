@@ -22,11 +22,12 @@ app.on('before-quit',e=>{if(!quitting&&children.length){e.preventDefault();quitt
 app.on('window-all-closed',()=>app.quit());
 app.whenReady().then(async()=>{
  fs.mkdirSync(path.join(data,'logs'),{recursive:true});
- mainWindow=new BrowserWindow({width:1440,height:930,minWidth:1000,minHeight:680,title:'Lwent Editor',autoHideMenuBar:false,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false}});
- mainWindow.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent('<body style="font:20px system-ui;padding:60px;background:#12141b;color:white">Đang khởi động Lwent Editor…</body>'));
+ mainWindow=new BrowserWindow({width:1440,height:930,minWidth:1000,minHeight:680,title:'Lwent Editor',backgroundColor:'#12141b',autoHideMenuBar:false,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false}});
+ mainWindow.loadFile(path.join(__dirname,'loading.html'));
+ const updater=require('./updates.cjs').createUpdater(mainWindow,stop);
  mainWindow.webContents.setWindowOpenHandler(({url})=>{if(/^https?:\/\//.test(url))require('electron').shell.openExternal(url);return {action:'deny'};});
  mainWindow.webContents.on('will-navigate',(e,url)=>{if(!url.startsWith('http://127.0.0.1:5176/')&&!url.startsWith('blob:http://127.0.0.1:5176/')&&!url.startsWith('data:'))e.preventDefault();});
- Menu.setApplicationMenu(Menu.buildFromTemplate([{label:'Editor',submenu:[{label:'Thông tin phần cứng',click:()=>dialog.showMessageBox(mainWindow,{title:'Phần cứng',message:hardware?`Chế độ: ${config().cpu?'CPU tương thích':'Tự động'}\nGPU: ${hardware.gpu||'CPU / GPU tích hợp'}\nMã hóa video: ${hardware.encoder}\nCPU: ${hardware.cpuThreads} luồng xử lý\nRAM: ${hardware.memoryGB} GB`:'Đang kiểm tra…'})},{type:'separator'},{role:'quit',label:'Thoát'}]},{label:'Chỉnh sửa',submenu:[{role:'undo'},{role:'redo'},{type:'separator'},{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'}]},{label:'Hiển thị',submenu:[{role:'reload',label:'Tải lại giao diện'},{role:'togglefullscreen',label:'Toàn màn hình'}]}]));
+ Menu.setApplicationMenu(Menu.buildFromTemplate([{label:'Editor',submenu:[{label:'Kiểm tra cập nhật…',click:()=>updater.check(true)},{type:'separator'},{label:'Thông tin phần cứng',click:()=>dialog.showMessageBox(mainWindow,{title:'Phần cứng',message:hardware?`Chế độ: ${config().cpu?'CPU tương thích':'Tự động'}\nGPU: ${hardware.gpu||'CPU / GPU tích hợp'}\nMã hóa video: ${hardware.encoder}\nCPU: ${hardware.cpuThreads} luồng xử lý\nRAM: ${hardware.memoryGB} GB`:'Đang kiểm tra…'})},{type:'separator'},{role:'quit',label:'Thoát'}]},{label:'Chỉnh sửa',submenu:[{role:'undo'},{role:'redo'},{type:'separator'},{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'}]},{label:'Hiển thị',submenu:[{role:'reload',label:'Tải lại giao diện'},{role:'togglefullscreen',label:'Toàn màn hình'}]}]));
  try{
  for(const port of [5176,8101,20131,20132])await free(port);
  const python=path.join(root,'python','python.exe');const ffmpeg=path.join(root,'tools','ffmpeg.exe');
@@ -51,5 +52,6 @@ app.whenReady().then(async()=>{
  child(process.execPath,[path.join(front,'server.js')],{ELECTRON_RUN_AS_NODE:'1',EDITOR_DESKTOP_MODE:'1',NODE_ENV:'production',PORT:'5176',HOSTNAME:'127.0.0.1',NEXT_TELEMETRY_DISABLED:'1',RVP_BACKEND_URL:'http://127.0.0.1:8101',NEXT_PUBLIC_SITE_URL:'http://127.0.0.1:5176',NEXT_PUBLIC_MARBLE_API_URL:'https://api.marblecms.com',DATABASE_URL:'postgres://desktop:desktop@127.0.0.1:5432/desktop',BETTER_AUTH_SECRET:crypto.randomBytes(32).toString('hex'),UPSTASH_REDIS_REST_URL:'https://desktop.invalid',UPSTASH_REDIS_REST_TOKEN:'desktop-placeholder',MARBLE_WORKSPACE_KEY:'desktop-placeholder',FREESOUND_CLIENT_ID:'desktop-placeholder',FREESOUND_API_KEY:key(c,'soundKey')||'desktop-placeholder'},front,'frontend');
  await Promise.all([ready('http://127.0.0.1:8101/health'),ready('http://127.0.0.1:5176/projects')]);
  powerSaveBlocker.start('prevent-app-suspension');await mainWindow.loadURL('http://127.0.0.1:5176/projects');
+ setTimeout(()=>updater.check(false),5000);
  }catch(e){await stop();await dialog.showMessageBox(mainWindow,{type:'error',title:'Không thể khởi động Editor',message:e.message});app.quit();}
 });}

@@ -96,7 +96,8 @@ class GeminiTranslation(TranslationEngine):
             return []
         if source_language != "auto" and source_language.lower() == target_language.lower():
             return events
-        if not settings.ninerouter_api_key:
+        use_browser = settings.translation_engine.lower() == 'gemini_web'
+        if not use_browser and not settings.ninerouter_api_key:
             raise TranslationError(
                 "Chưa cấu hình API key 9router nên AI không thể dịch phụ đề."
             )
@@ -106,13 +107,17 @@ class GeminiTranslation(TranslationEngine):
         except ImportError as exc:
             raise TranslationError("Thiếu thư viện openai để gọi AI dịch phụ đề.") from exc
 
-        client = AsyncOpenAI(
-            api_key=settings.ninerouter_api_key,
-            base_url=settings.ninerouter_api_url,
-            # Retry is controlled below so one failing batch cannot silently
-            # multiply the SDK retries by the pipeline retries.
-            max_retries=0,
-        )
+        if use_browser:
+            from app.services.ai.gemini_web import GeminiWebClient
+            client = GeminiWebClient()
+        else:
+            client = AsyncOpenAI(
+                api_key=settings.ninerouter_api_key,
+                base_url=settings.ninerouter_api_url,
+                # Retry is controlled below so one failing batch cannot silently
+                # multiply the SDK retries by the pipeline retries.
+                max_retries=0,
+            )
         profile = get_processing_profile(processing_mode)
         character_names = build_character_name_registry(context)
         source_texts = [
@@ -352,7 +357,8 @@ def _translation_fingerprint(
         "source_language": source_language,
         "target_language": target_language,
         "context": context or {},
-        "model": settings.ai_model,
+        "model": 'Gemini Web' if settings.translation_engine == 'gemini_web' else settings.ai_model,
+        "engine": settings.translation_engine,
         "processing_mode": profile.name,
         "batch_items": profile.translation_batch_items,
         "batch_chars": profile.translation_batch_chars,
@@ -410,7 +416,7 @@ def _write_translation_checkpoint(
     payload = {
         "version": 1,
         "fingerprint": fingerprint,
-        "model": settings.ai_model,
+        "model": 'Gemini Web' if settings.translation_engine == 'gemini_web' else settings.ai_model,
         "translated_items": len(translated_texts),
         "total_items": total_items,
         "completed": len(translated_texts) == total_items,
@@ -493,6 +499,9 @@ async def _translate_gemini_batch(
         "Nếu là tên/logo/ký tự Latin không có nghĩa rõ ràng, giữ nguyên chữ đó; không tự xóa. "
         "Dịch cả câu rời ngữ cảnh; CHARACTER_BIBLE chỉ hướng dẫn xưng hô, không quyết định bỏ câu.\n"
         "- Giữ nguyên ý, không bịa tình tiết, không thêm tên người nói nếu câu nguồn không có.\n"
+        "- Đọc các CURRENT_ITEMS liền nhau như một câu liên tục để dịch câu bị chia: không thêm chủ thể hay danh từ mới ở mỗi mảnh. "
+        "Ví dụ 太医院嘱咐的 / 药膳和补汤熬好了 phải nối nghĩa 'Theo lời dặn của Thái y viện / dược thiện và canh bổ đã nấu xong'; "
+        "không dịch mảnh đầu thành 'Món theo lời dặn'. 熬汤 là nấu/hầm canh; không máy móc gọi mọi món là sắc thuốc.\n"
         "- Dùng CHARACTER_BIBLE và MEMORY làm sự thật ưu tiên cho tên, biệt danh, giới tính, quan hệ và xưng hô.\n"
         "- CHARACTER_NAME_CONTRACT là bắt buộc: khi nhắc nhân vật phải chép đúng canonical_names, không dịch nghĩa tên riêng, "
         "không dùng alias và không đổi tên giữa các batch.\n"
@@ -634,7 +643,7 @@ async def _translate_gemini_batch_with_retries(
     first_id = batch[0]["id"] if batch else "?"
     last_id = batch[-1]["id"] if batch else "?"
     raise TranslationError(
-        f"AI {settings.ai_model} không dịch được batch {first_id}-{last_id}: {last_error}"
+        f"AI {'Gemini Web' if settings.translation_engine == 'gemini_web' else settings.ai_model} không dịch được batch {first_id}-{last_id}: {last_error}"
     ) from last_error
 
 

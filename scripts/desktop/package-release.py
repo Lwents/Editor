@@ -31,9 +31,9 @@ with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_STORED, allowZip64=
 3. Giu cac file .bin ben canh bo cai .exe trong khi cai.
 4. Mo Editor tu Desktop hoac Start Menu.
 
-Khong can cai Python, Node.js hay trinh duyet rieng.
+Khong can cai Python hay Node.js rieng.
 VieNeu va ZeroTTS co mo hinh offline; Edge can Internet.
-Dich AI can dia chi dich vu va khoa API cua chinh ban.
+Dich AI: chon Gemini Web (can Chrome/Edge, dang nhap Google) hoac API cua ban.
 Bam bieu tuong Cau hinh AI tren thanh tren cua editor de thiet lap.
 Ung dung tu kiem tra GPU/CPU. Toc do phu thuoc phan cung va driver.
 Bo cai khong chua tai khoan, mat khau hay khoa API ca nhan.

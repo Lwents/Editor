@@ -98,6 +98,8 @@ class JobProgress(BaseModel):
     status: JobStatus
     progress: int = Field(ge=0, le=100)
     stage: str
+    stage_percent: float | None = Field(default=None, ge=0, le=100)
+    progress_changed_at: datetime | None = None
     request: DubbingRequest
     created_at: datetime
     updated_at: datetime

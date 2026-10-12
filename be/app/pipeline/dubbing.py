@@ -32,6 +32,9 @@ async def process_dubbing_job(job_id: str) -> None:
         def progress(stage: str, percent: int) -> None:
             job_store.update(job_id, stage=stage, progress=percent)
 
+        def measurement(completed: float, total: float) -> None:
+            job_store.update(job_id, stage_percent=round(100 * min(max(completed / total, 0), 1), 1) if total > 0 else None)
+
         voice_warning: str | None = None
         narration_audio: Path | None = None
         profile = get_processing_profile(job.request.processing_mode)
@@ -78,6 +81,7 @@ async def process_dubbing_job(job_id: str) -> None:
             subtitle_file = await get_or_create_subtitles(
                 str(job.request.source_url) if job.request.source_url else None,
                 audio_file, work_dir, job.request.source_language, progress, source_video,
+                on_measurement=measurement,
                 asr_timeout_seconds=asr_timeout_seconds,
                 processing_mode=job.request.processing_mode,
             )
@@ -128,6 +132,7 @@ async def process_dubbing_job(job_id: str) -> None:
                 job.request.source_language,
                 progress,
                 source_video,
+                on_measurement=measurement,
                 asr_timeout_seconds=asr_timeout_seconds,
                 processing_mode=job.request.processing_mode,
             )
@@ -170,6 +175,7 @@ async def process_dubbing_job(job_id: str) -> None:
                 job.request.source_language,
                 progress,
                 source_video,
+                on_measurement=measurement,
                 asr_timeout_seconds=asr_timeout_seconds,
                 processing_mode=job.request.processing_mode,
             )

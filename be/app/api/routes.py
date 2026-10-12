@@ -1990,6 +1990,9 @@ async def get_editor_subtitles(job_id: str, language: Literal["translated", "sou
         raise HTTPException(status_code=409, detail="Phụ đề dịch chưa hoàn tất.")
     work_dir = Path(settings.storage_dir) / "jobs" / job_id
     if language == "source":
+        verified = work_dir / "subtitles.source.verified.srt"
+        if verified.is_file() and verified.stat().st_size > 0:
+            return FileResponse(verified, media_type="application/x-subrip", filename=f"{job_id}-source.srt", headers={"X-Subtitle-Timing": "display"})
         from app.services.subtitles.visible import visible_source_subtitles
         try:
             visible_file = await visible_source_subtitles(work_dir)

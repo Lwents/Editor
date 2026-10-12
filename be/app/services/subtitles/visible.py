@@ -35,11 +35,11 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
     import cv2
     import numpy as np
     started = time.perf_counter()
-    def report(stage):
+    def report(stage, completed=0, total=0):
         if cancelled is not None and cancelled.is_set():
             raise RuntimeError('Visible subtitle scan cancelled')
         if on_progress is not None:
-            on_progress(stage)
+            on_progress((stage, completed, total))
 
     report('Đang nạp bộ nhận diện chữ trên video')
     language = recognition_language(source.parent)
@@ -215,7 +215,7 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
             text, confidence = read_text(frame, index)
             if index % (step * 50) == 0:
                 print(f"[Visible subtitles] Scanning {index / fps:.1f}/{count / fps:.1f}s", flush=True)
-                report(f'Đọc chữ gốc: đã quét {index / fps:.1f}/{count / fps:.1f} giây video')
+                report(f'Đọc chữ gốc: đã quét {(index + 1) / fps:.1f}/{count / fps:.1f} giây video', index + 1, count)
             samples.append([index, text, confidence])
         if not samples:
             return None
@@ -230,7 +230,7 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
         # Reused labels are not independent evidence. Fully recheck an
         # unstable group at the original 10 Hz rate; keep stable groups fast.
         for group_index, group in enumerate(groups):
-            report(f'Kiểm tra chữ nhận diện: {group_index + 1}/{len(groups)} đoạn')
+            report(f'Kiểm tra chữ nhận diện: {group_index}/{len(groups)} đoạn', group_index, len(groups))
             if len({text_key(row[1]) for row in group if row[1]}) < 2:
                 continue
             for row in group:
@@ -254,7 +254,7 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
         boundaries = [0]
         endings = []
         for i in range(1, len(groups)):
-            report(f'Căn thời gian phụ đề: {i}/{len(groups) - 1} ranh giới')
+            report(f'Căn thời gian phụ đề: {i - 1}/{len(groups) - 1} ranh giới', i - 1, len(groups) - 1)
             # Reused labels may conceal a small visual edit until the next
             # mandatory reading. Refine from the last actual OCR observation,
             # not the last reused label, to retain frame-level boundaries.
@@ -317,20 +317,22 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
         capture.release()
 
 
-async def _scan_with_progress(source: Path, output: Path, on_progress) -> Path | None:
+async def _scan_with_progress(source: Path, output: Path, on_progress, on_measurement=None) -> Path | None:
     updates = SimpleQueue()
     cancelled = Event()
     worker = asyncio.create_task(asyncio.to_thread(_extract_visible, source, output, updates.put, cancelled))
-    stage = 'Đang chuẩn bị nhận diện chữ trên video'
+    stage, completed, total = 'Đang chuẩn bị nhận diện chữ trên video', 0, 0
     try:
         while True:
             while True:
                 try:
-                    stage = updates.get_nowait()
+                    stage, completed, total = updates.get_nowait()
                 except Empty:
                     break
             if on_progress is not None:
                 on_progress(stage)
+            if on_measurement is not None:
+                on_measurement(completed, total)
             if worker.done():
                 return await worker
             await asyncio.wait({worker}, timeout=2)
@@ -340,7 +342,7 @@ async def _scan_with_progress(source: Path, output: Path, on_progress) -> Path |
             worker.cancel()
 
 
-async def visible_source_subtitles(work_dir: Path, on_progress: Callable[[str], None] | None = None) -> Path | None:
+async def visible_source_subtitles(work_dir: Path, on_progress: Callable[[str], None] | None = None, on_measurement: Callable[[float, float], None] | None = None) -> Path | None:
     output = work_dir / 'subtitles.visible.srt'
     source = work_dir / 'source.mp4'
     if not source.is_file():
@@ -390,7 +392,7 @@ async def visible_source_subtitles(work_dir: Path, on_progress: Callable[[str], 
                 result = output
                 print('[Visible subtitles] Reusing verified video captions.', flush=True)
             else:
-                result = await _scan_with_progress(source, output, on_progress)
+                result = await _scan_with_progress(source, output, on_progress, on_measurement)
                 if result:
                     await asyncio.to_thread(asr_cache.save_artifacts, shared, artifacts)
         temporary = marker.with_suffix('.pending.json')
