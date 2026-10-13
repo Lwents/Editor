@@ -29,3 +29,5 @@ Name: "{group}\Lwent Editor"; Filename: "{app}\Editor.exe"; IconFilename: "{app}
 Name: "{autodesktop}\Lwent Editor"; Filename: "{app}\Editor.exe"; IconFilename: "{app}\resources\app\assets\app-logo.ico"
 [Run]
 Filename: "{app}\Editor.exe"; Description: "Mở Lwent Editor"; Flags: nowait postinstall skipifsilent
+
+#include "uninstall-policy.iss"

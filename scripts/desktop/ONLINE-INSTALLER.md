@@ -21,3 +21,24 @@ python scripts/desktop/build-online.py --runtime release/Editor-Windows-x64 --ma
 
 The normal installed application retains its automatic update mechanism.
 AI keys, browser login, project data and user settings are not included in the installer.
+
+## Uninstallation
+
+After applying the code update, the online wizard runs a small maintenance setup
+with the same AppId, user scope and x64 mode as the runtime installer. It appends
+to the existing uninstall log, preserving the original runtime file list while
+updating the uninstaller and the version shown in Windows Installed Apps.
+No second application entry is created.
+
+Uninstall removes application-owned `resources` and `locales` folders, including
+files added by later updates, and the downloaded update cache. It does not use
+a wildcard over the installation root or delete exported files elsewhere.
+Interactive uninstall asks whether to also delete `%APPDATA%/editor-desktop`
+(projects, settings and API configuration) and
+`%LOCALAPPDATA%/LwentEditor/GeminiWeb` (the app's Gemini login).
+The default answer is No; silent uninstall always retains personal data.
+Close the app before uninstalling, and close its Gemini browser before choosing
+to delete the login profile. A custom `EDITOR_USER_DATA` directory is retained.
+
+Previously installed copies need to run the new online installer once to receive
+this uninstall policy; a code-only update does not replace their uninstaller.

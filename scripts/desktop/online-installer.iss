@@ -19,6 +19,7 @@ Compression=lzma2
 [Files]
 Source: "online-finalize.py"; Flags: dontcopy
 Source: "apply-update.py"; Flags: dontcopy
+Source: "{#Output}\Lwent-Uninstall-Maintenance.exe"; Flags: dontcopy
 [Run]
 Filename: "{app}\Editor.exe"; Description: "Mở Lwent Editor"; Flags: nowait postinstall skipifsilent
 [Code]
@@ -66,4 +67,12 @@ begin
     RaiseException('Không chạy được bước cập nhật: ' + SysErrorMessage(ExitCode));
   if ExitCode <> 0 then
     RaiseException('Đã cài bản nền nhưng chưa áp dụng được cập nhật. Mã lỗi: ' + IntToStr(ExitCode) + '. Có thể mở app và chọn Kiểm tra cập nhật.');
+  ExtractTemporaryFile('Lwent-Uninstall-Maintenance.exe');
+  WizardForm.StatusLabel.Caption := 'Đang cập nhật bộ gỡ cài đặt…';
+  if not Exec(ExpandConstant('{tmp}\Lwent-Uninstall-Maintenance.exe'),
+    '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR="' + ExpandConstant('{app}') + '"',
+    '', SW_HIDE, ewWaitUntilTerminated, ExitCode) then
+    RaiseException('Không cập nhật được bộ gỡ cài đặt: ' + SysErrorMessage(ExitCode));
+  if ExitCode <> 0 then
+    RaiseException('Không cập nhật được bộ gỡ cài đặt. Mã lỗi: ' + IntToStr(ExitCode));
 end;

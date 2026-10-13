@@ -40,12 +40,15 @@ if __name__ == '__main__':
     parser.add_argument('--runtime', type=Path, required=True)
     parser.add_argument('--manifest', type=Path, required=True)
     parser.add_argument('--compiler', type=Path, required=True)
+    parser.add_argument('--output', type=Path, default=ROOT / 'release/online')
     parser.add_argument('--metadata-only', action='store_true', help='Use the checked-in hashes of the immutable runtime release (CI only)')
     args = parser.parse_args()
     include = ROOT / '.runtime/online-installer-data.iss'
     include.parent.mkdir(exist_ok=True)
     include.write_text(generate(args.runtime, json.loads(args.manifest.read_text()), args.metadata_only), encoding='utf-8')
-    output = ROOT / 'release/online'
+    output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
+    version = json.loads(args.manifest.read_text())['version']
+    subprocess.run([str(args.compiler), '/Qp', '/DUpdateVersion=' + version, '/DOutput=' + str(output), str(Path(__file__).with_name('uninstall-maintenance.iss'))], check=True)
     subprocess.run([str(args.compiler), '/Qp', '/DDataInclude=' + str(include), '/DOutput=' + str(output), str(Path(__file__).with_name('online-installer.iss'))], check=True)
     print('Online installer: ' + str(output / 'Lwent-Editor-Online-Setup.exe'))
