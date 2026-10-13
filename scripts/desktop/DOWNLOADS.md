@@ -15,6 +15,14 @@ to loopback with a random token. A mutex prevents two new installers from writin
 the same cache simultaneously. The helper stops the downloader when cancelled or
 when the installer exits.
 
+After downloading, interactive setup displays the runtime installer's native
+progress window during decompression. The outer wizard is temporarily hidden,
+then restored for the code update and uninstaller registration. Those steps show
+a marquee and elapsed seconds, rather than a made-up percentage. A separate
+PowerShell helper waits for each child process and reports its exit code through
+an atomic result file; the wizard continues pumping messages so it can repaint
+and move. Fully silent setup keeps the runtime window hidden.
+
 Third-party notices are included in the installer and copied to
 `resources/app/aria2-COPYING.txt` and `resources/app/aria2-LICENSE.OpenSSL.txt`.
 The uninstaller removes these with the other application files.

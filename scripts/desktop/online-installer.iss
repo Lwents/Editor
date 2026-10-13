@@ -6,6 +6,7 @@
 function GetCurrentProcessId: Integer;
   external 'GetCurrentProcessId@kernel32.dll stdcall';
 #include "installer-download.iss"
+#include "installer-process.iss"
 [Setup]
 AppId=LwentEditorOnlineInstaller
 AppName={#AppName}
@@ -29,6 +30,7 @@ Source: "{#DownloadTools}\aria2c.exe"; Flags: dontcopy
 Source: "{#DownloadTools}\COPYING"; Flags: dontcopy
 Source: "{#DownloadTools}\LICENSE.OpenSSL"; Flags: dontcopy
 Source: "online-download.ps1"; Flags: dontcopy
+Source: "installer-process.ps1"; Flags: dontcopy
 Source: "{#DownloadManifest}"; DestName: "installation-downloads.json"; Flags: dontcopy
 Source: "online-finalize.py"; Flags: dontcopy
 Source: "apply-update.py"; Flags: dontcopy
@@ -68,7 +70,7 @@ begin
   end;
 end;
 procedure InstallDownloadedApplication;
-var ExitCode: Integer; Python, Parameters, RuntimeSetup, RuntimeLog, UpdateLog, MaintenanceLog: String;
+var ExitCode: Integer; Python, Parameters, RuntimeSetup, RuntimeLog, UpdateLog, MaintenanceLog, RuntimeMode: String;
 begin
   WizardForm.StatusLabel.Caption := 'Đang cài Lwent Editor…';
   InstallEvent('Bắt đầu cài runtime vào ' + ExpandConstant('{app}'));
@@ -76,7 +78,8 @@ begin
   if not RuntimeCacheComplete then RaiseException('Cache runtime thiếu file sau khi tải.');
   ForceDirectories(ExpandConstant('{localappdata}\LwentEditor\InstallerLogs'));
   RuntimeLog := ExpandConstant('{localappdata}\LwentEditor\InstallerLogs\runtime-') + GetDateTimeString('yyyymmdd-hhnnss', '-', ':') + '.log';
-  if not Exec(RuntimeSetup, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /DIR="' + ExpandConstant('{app}') + '" /LOG="' + RuntimeLog + '"', ExtractFileDir(RuntimeSetup), SW_HIDE, ewWaitUntilTerminated, ExitCode) then
+  RuntimeMode := '/SILENT'; if WizardSilent then RuntimeMode := '/VERYSILENT';
+  if not RunInstallStep(RuntimeSetup, RuntimeMode + ' /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /DIR="' + ExpandConstant('{app}') + '" /LOG="' + RuntimeLog + '"', ExtractFileDir(RuntimeSetup), True, ExitCode) then
   begin
     ReportInstallError('Chạy bộ cài runtime', 'WINDOWS', ExitCode, SysErrorMessage(ExitCode), RuntimeLog);
     Abort;
@@ -94,7 +97,7 @@ begin
   Parameters := '"' + ExpandConstant('{tmp}\online-finalize.py') + '" --zip "' + ExpandConstant('{tmp}\Editor-Update-Windows-x64.zip') + '" --sha256 {#UpdateHash} --version {#UpdateVersion} --resources "' + ExpandConstant('{app}\resources') + '" --log "' + UpdateLog + '"';
   WizardForm.StatusLabel.Caption := 'Đang áp dụng phiên bản mới nhất…';
   InstallEvent('Bắt đầu áp dụng cập nhật {#UpdateVersion}');
-  if not Exec(Python, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ExitCode) then
+  if not RunInstallStep(Python, Parameters, '', False, ExitCode) then
   begin
     ReportInstallError('Chạy bước cập nhật', 'WINDOWS', ExitCode, SysErrorMessage(ExitCode), UpdateLog);
     Abort;
@@ -113,9 +116,9 @@ begin
   WizardForm.StatusLabel.Caption := 'Đang cập nhật bộ gỡ cài đặt…';
   MaintenanceLog := InstallLogFolder + '\uninstaller-' + InstallSessionId + '.log';
   InstallEvent('Bắt đầu cập nhật bộ gỡ cài đặt');
-  if not Exec(ExpandConstant('{tmp}\Lwent-Uninstall-Maintenance.exe'),
+  if not RunInstallStep(ExpandConstant('{tmp}\Lwent-Uninstall-Maintenance.exe'),
     '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR="' + ExpandConstant('{app}') + '" /LOG="' + MaintenanceLog + '"',
-    '', SW_HIDE, ewWaitUntilTerminated, ExitCode) then
+    '', False, ExitCode) then
   begin
     ReportInstallError('Chạy bước sửa bộ gỡ', 'WINDOWS', ExitCode, SysErrorMessage(ExitCode), MaintenanceLog);
     Abort;
