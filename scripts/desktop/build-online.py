@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BASE_URL = 'https://github.com/Lwents/Editor/releases/download/installer-runtime-1.3.0/'
 
 
-def generate(runtime: Path, manifest: dict) -> str:
+def generate(runtime: Path, manifest: dict, metadata_only: bool = False) -> str:
     version = manifest['version']
     digest = manifest['sha256']
     if not re.fullmatch(r'1\.3\.0\.\d+', version) or not re.fullmatch(r'[a-f0-9]{64}', digest):
@@ -20,9 +20,10 @@ def generate(runtime: Path, manifest: dict) -> str:
         checksum, filename = line.split()
         if not re.fullmatch(r'[a-f0-9]{64}', checksum) or not re.fullmatch(r'Editor-Setup-Windows-x64(?:-[1-4]\.bin|\.exe)', filename):
             raise ValueError('Invalid runtime checksum list')
-        with (runtime / filename).open('rb') as stream:
-            if hashlib.file_digest(stream, 'sha256').hexdigest() != checksum:
-                raise ValueError('Runtime file checksum mismatch: ' + filename)
+        if not metadata_only:
+            with (runtime / filename).open('rb') as stream:
+                if hashlib.file_digest(stream, 'sha256').hexdigest() != checksum:
+                    raise ValueError('Runtime file checksum mismatch: ' + filename)
         checksums[filename] = checksum
     if len(checksums) != 5:
         raise ValueError('Incomplete runtime')
@@ -39,10 +40,11 @@ if __name__ == '__main__':
     parser.add_argument('--runtime', type=Path, required=True)
     parser.add_argument('--manifest', type=Path, required=True)
     parser.add_argument('--compiler', type=Path, required=True)
+    parser.add_argument('--metadata-only', action='store_true', help='Use the checked-in hashes of the immutable runtime release (CI only)')
     args = parser.parse_args()
     include = ROOT / '.runtime/online-installer-data.iss'
     include.parent.mkdir(exist_ok=True)
-    include.write_text(generate(args.runtime, json.loads(args.manifest.read_text())), encoding='utf-8')
+    include.write_text(generate(args.runtime, json.loads(args.manifest.read_text()), args.metadata_only), encoding='utf-8')
     output = ROOT / 'release/online'
     output.mkdir(parents=True, exist_ok=True)
     subprocess.run([str(args.compiler), '/Qp', '/DDataInclude=' + str(include), '/DOutput=' + str(output), str(Path(__file__).with_name('online-installer.iss'))], check=True)
