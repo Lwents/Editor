@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { ColorPicker } from "@/components/ui/color-picker";
 import { useEditor } from "@/editor/use-editor";
 import {
 	AddTrackCommand,
@@ -36,6 +37,22 @@ export function SubtitleTools({ trackId }: { trackId?: string }) {
 	const [blurX, setBlurX] = useState(50);
 	const [intensity, setIntensity] = useState(60);
 	const [working, setWorking] = useState(false);
+	const subtitleColor = useEditor((e) => {
+		const track = e.scenes
+			.getActiveSceneOrNull()
+			?.tracks.overlay.find((t) => t.id === trackId && t.type === "text");
+		if (!track || track.type !== "text") return null;
+		const selected = e.selection
+			.getSelectedElements()
+			.find((s) => s.trackId === track.id);
+		const cue =
+			track.elements.find((c) => c.id === selected?.elementId) ??
+			track.elements[0];
+		return cue ? String(cue.params.color || "#ffffff") : null;
+	});
+	useEffect(() => {
+		setColor(subtitleColor ?? "#ffffff");
+	}, [subtitleColor, trackId]);
 	const blurElements =
 		scene?.tracks.overlay.flatMap((t) =>
 			t.elements
@@ -46,6 +63,35 @@ export function SubtitleTools({ trackId }: { trackId?: string }) {
 		return editor.scenes
 			.getActiveScene()
 			.tracks.overlay.find((t) => t.id === trackId && t.type === "text");
+	}
+	function previewSubtitleColor(hex: string) {
+		const nextColor = `#${hex}`;
+		setColor(nextColor);
+		const track = subtitleTrack();
+		if (!track || track.type !== "text") return;
+		if (
+			!editor.timeline.isPreviewActive() &&
+			track.elements.every(
+				(e) =>
+					String(e.params.color || "#ffffff").toLowerCase() ===
+					nextColor.toLowerCase(),
+			)
+		)
+			return;
+		editor.timeline.previewElements({
+			updates: track.elements.map((e) => ({
+				trackId: track.id,
+				elementId: e.id,
+				updates: { params: { ...e.params, color: nextColor } },
+			})),
+		});
+	}
+	function commitSubtitleColor(hex: string) {
+		previewSubtitleColor(hex);
+		editor.timeline.commitPreview();
+		void editor.save
+			.flush()
+			.catch(() => toast.error("Không lưu được màu phụ đề. Hãy thử lại."));
 	}
 	function selectSubtitle() {
 		const track = subtitleTrack();
@@ -361,17 +407,21 @@ export function SubtitleTools({ trackId }: { trackId?: string }) {
 							}
 						/>
 					</label>
-					<label>
+					<div>
 						Màu chữ
-						<input
-							aria-label="Màu chữ sub"
-							type="color"
-							className="w-full h-9 rounded border bg-background"
-							value={color}
-							onChange={(e) => setColor(e.target.value)}
+						<ColorPicker
+							ariaLabel="Màu chữ sub"
+							className="w-full h-9"
+							value={color.replace(/^#/, "").toUpperCase()}
+							onChange={previewSubtitleColor}
+							onChangeEnd={commitSubtitleColor}
+							contentSide="right"
 						/>
-					</label>
+					</div>
 				</div>
+				<p className="text-xs text-muted-foreground">
+					Chọn màu để đổi ngay cho tất cả sub. Ctrl+Z để hoàn tác.
+				</p>
 				<label className="flex items-center gap-2 text-xs">
 					<input
 						type="checkbox"
@@ -449,9 +499,10 @@ export function SubtitleTools({ trackId }: { trackId?: string }) {
 								onBlur={(e) => {
 									const raw = e.target.value.trim();
 									const parsed = Number(raw);
-									const next = raw && Number.isFinite(parsed)
-										? Math.max(Number(min), Math.min(Number(max), parsed))
-										: Number(value);
+									const next =
+										raw && Number.isFinite(parsed)
+											? Math.max(Number(min), Math.min(Number(max), parsed))
+											: Number(value);
 									e.target.value = String(next);
 									(set as (v: number) => void)(next);
 								}}

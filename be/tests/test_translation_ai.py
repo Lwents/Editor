@@ -129,7 +129,9 @@ class GeminiTranslationTests(unittest.IsolatedAsyncioTestCase):
         original_key = settings.ninerouter_api_key
         try:
             settings.ninerouter_api_key = "test-key"
-            with patch("openai.AsyncOpenAI", return_value=fake_client):
+            with patch.object(settings, "translation_engine", "gemini"), patch(
+                "openai.AsyncOpenAI", return_value=fake_client
+            ):
                 translated = await GeminiTranslation().translate_events(
                     [SubtitleEvent(0.0, 1.0, "Gian calls Suneo.")],
                     "en",
@@ -215,7 +217,9 @@ class GeminiTranslationTests(unittest.IsolatedAsyncioTestCase):
         original_key = settings.ninerouter_api_key
         try:
             settings.ninerouter_api_key = "test-key"
-            with patch("openai.AsyncOpenAI", return_value=fake_client):
+            with patch.object(settings, "translation_engine", "gemini"), patch(
+                "openai.AsyncOpenAI", return_value=fake_client
+            ):
                 translated = await GeminiTranslation().translate_events(
                     [SubtitleEvent(0.0, 1.0, "She is his wife.")],
                     "en",
