@@ -1,6 +1,7 @@
 #define AppName "Lwent Editor"
 #include "installer-cache.iss"
 #include DataInclude
+#include "installer-errors.iss"
 [Setup]
 AppId=LwentEditorOnlineInstaller
 AppName={#AppName}
@@ -17,6 +18,7 @@ Uninstallable=no
 CreateAppDir=no
 DisableProgramGroupPage=yes
 Compression=lzma2
+SetupLogging=yes
 [Files]
 Source: "online-finalize.py"; Flags: dontcopy
 Source: "apply-update.py"; Flags: dontcopy
@@ -27,6 +29,8 @@ Filename: "{app}\Editor.exe"; Description: "Mở Lwent Editor"; Flags: nowait po
 var DownloadPage: TDownloadWizardPage;
 procedure InitializeWizard;
 begin
+  StartInstallLog;
+  InstallEvent('Khởi tạo bộ cài. Thư mục mặc định: ' + ExpandConstant('{app}'));
   WizardForm.WelcomeLabel2.Caption := 'Bộ cài sẽ tải dữ liệu từ GitHub rồi tự cài Lwent Editor. Cần Internet và dung lượng trống cho dữ liệu tải về cùng ứng dụng. Hãy đóng Lwent Editor trước khi cài.';
   DownloadPage := CreateDownloadPage('Đang tải Lwent Editor', 'Đang tải và kiểm tra dữ liệu cài đặt. Có thể mất thời gian tùy tốc độ mạng.', nil);
   DownloadPage.ShowBaseNameInsteadOfUrl := True;
@@ -35,53 +39,96 @@ function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
   if CurPageID <> wpReady then exit;
-  DownloadPage.Clear;
-  AddInstallationDownloads(DownloadPage);
-  DownloadPage.Show;
+  ErrorWasReported := False;
+  InstallEvent('Bắt đầu tải và kiểm tra SHA256 dữ liệu');
   try
     try
+      DownloadPage.Clear;
+      AddInstallationDownloads(DownloadPage);
+      DownloadPage.Show;
       DownloadPage.Download;
       PreserveRuntimeDownloads;
+      InstallEvent('Đã tải và kiểm tra xong dữ liệu');
     except
       Result := False;
       if not DownloadPage.AbortedByUser then
-        SuppressibleMsgBox('Chưa tải được dữ liệu. Kiểm tra kết nối rồi bấm Cài đặt để thử lại.' + #13#10 + GetExceptionMessage, mbError, MB_OK, IDOK);
+      begin
+        DownloadPage.Hide;
+        ReportInstallError('Tải hoặc kiểm tra dữ liệu', 'DOWNLOAD', 1, GetExceptionMessage, '');
+      end
+      else InstallEvent('Người dùng dừng tải dữ liệu');
     end;
   finally
     DownloadPage.Hide;
   end;
 end;
-procedure CurStepChanged(CurStep: TSetupStep);
-var ExitCode: Integer; Python, Parameters, RuntimeSetup, RuntimeLog: String;
+procedure InstallDownloadedApplication;
+var ExitCode: Integer; Python, Parameters, RuntimeSetup, RuntimeLog, UpdateLog, MaintenanceLog: String;
 begin
-  if CurStep <> ssInstall then exit;
   WizardForm.StatusLabel.Caption := 'Đang cài Lwent Editor…';
+  InstallEvent('Bắt đầu cài runtime vào ' + ExpandConstant('{app}'));
   RuntimeSetup := InstallerCache + '\Editor-Setup-Windows-x64.exe';
   if not RuntimeCacheComplete then RuntimeSetup := ExpandConstant('{tmp}\Editor-Setup-Windows-x64.exe');
   ForceDirectories(ExpandConstant('{localappdata}\LwentEditor\InstallerLogs'));
   RuntimeLog := ExpandConstant('{localappdata}\LwentEditor\InstallerLogs\runtime-') + GetDateTimeString('yyyymmdd-hhnnss', '-', ':') + '.log';
   if not Exec(RuntimeSetup, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /DIR="' + ExpandConstant('{app}') + '" /LOG="' + RuntimeLog + '"', ExtractFileDir(RuntimeSetup), SW_HIDE, ewWaitUntilTerminated, ExitCode) then
-    RaiseException('Không chạy được bộ cài: ' + SysErrorMessage(ExitCode));
+  begin
+    ReportInstallError('Chạy bộ cài runtime', 'WINDOWS', ExitCode, SysErrorMessage(ExitCode), RuntimeLog);
+    Abort;
+  end;
   if (ExitCode <> 0) and (ExitCode <> 3010) then
-    RaiseException('Bộ cài thất bại, mã lỗi: ' + IntToStr(ExitCode) + '.' + #13#10 +
-      'Dữ liệu cá nhân được giữ nguyên. File tải đã được giữ để thử lại.' + #13#10 +
-      'Nhật ký lỗi: ' + RuntimeLog);
+  begin
+    ReportInstallError('Cài hoặc giải nén runtime', 'RUNTIME', ExitCode, 'File tải được giữ để thử lại nếu lưu cache thành công.', RuntimeLog);
+    Abort;
+  end;
+  InstallEvent('Runtime cài xong. Mã kết quả: ' + IntToStr(ExitCode));
   ExtractTemporaryFile('online-finalize.py');
   ExtractTemporaryFile('apply-update.py');
   Python := ExpandConstant('{app}\resources\bundle\python\python.exe');
-  Parameters := '"' + ExpandConstant('{tmp}\online-finalize.py') + '" --zip "' + ExpandConstant('{tmp}\Editor-Update-Windows-x64.zip') + '" --sha256 {#UpdateHash} --version {#UpdateVersion} --resources "' + ExpandConstant('{app}\resources') + '"';
+  UpdateLog := InstallLogFolder + '\update-' + InstallSessionId + '.log';
+  Parameters := '"' + ExpandConstant('{tmp}\online-finalize.py') + '" --zip "' + ExpandConstant('{tmp}\Editor-Update-Windows-x64.zip') + '" --sha256 {#UpdateHash} --version {#UpdateVersion} --resources "' + ExpandConstant('{app}\resources') + '" --log "' + UpdateLog + '"';
   WizardForm.StatusLabel.Caption := 'Đang áp dụng phiên bản mới nhất…';
+  InstallEvent('Bắt đầu áp dụng cập nhật {#UpdateVersion}');
   if not Exec(Python, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ExitCode) then
-    RaiseException('Không chạy được bước cập nhật: ' + SysErrorMessage(ExitCode));
+  begin
+    ReportInstallError('Chạy bước cập nhật', 'WINDOWS', ExitCode, SysErrorMessage(ExitCode), UpdateLog);
+    Abort;
+  end;
   if ExitCode <> 0 then
-    RaiseException('Đã cài bản nền nhưng chưa áp dụng được cập nhật. Mã lỗi: ' + IntToStr(ExitCode) + '. Có thể mở app và chọn Kiểm tra cập nhật.');
+  begin
+    ReportInstallError('Áp dụng bản cập nhật', 'UPDATE', ExitCode, 'Runtime đã được cài. Xem log để biết lỗi kiểm tra gói hoặc ghi file.', UpdateLog);
+    Abort;
+  end;
+  InstallEvent('Đã áp dụng cập nhật');
   ExtractTemporaryFile('Lwent-Uninstall-Maintenance.exe');
   WizardForm.StatusLabel.Caption := 'Đang cập nhật bộ gỡ cài đặt…';
+  MaintenanceLog := InstallLogFolder + '\uninstaller-' + InstallSessionId + '.log';
+  InstallEvent('Bắt đầu cập nhật bộ gỡ cài đặt');
   if not Exec(ExpandConstant('{tmp}\Lwent-Uninstall-Maintenance.exe'),
-    '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR="' + ExpandConstant('{app}') + '"',
+    '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR="' + ExpandConstant('{app}') + '" /LOG="' + MaintenanceLog + '"',
     '', SW_HIDE, ewWaitUntilTerminated, ExitCode) then
-    RaiseException('Không cập nhật được bộ gỡ cài đặt: ' + SysErrorMessage(ExitCode));
+  begin
+    ReportInstallError('Chạy bước sửa bộ gỡ', 'WINDOWS', ExitCode, SysErrorMessage(ExitCode), MaintenanceLog);
+    Abort;
+  end;
   if ExitCode <> 0 then
-    RaiseException('Không cập nhật được bộ gỡ cài đặt. Mã lỗi: ' + IntToStr(ExitCode));
+  begin
+    ReportInstallError('Cập nhật bộ gỡ cài đặt', 'RUNTIME', ExitCode, 'Ứng dụng đã cập nhật nhưng bộ gỡ chưa cập nhật xong.', MaintenanceLog);
+    Abort;
+  end;
   DelTree(InstallerCache, True, True, True);
+  InstallEvent('Hoàn tất cài đặt {#UpdateVersion}');
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep <> ssInstall then exit;
+  ErrorWasReported := False;
+  try
+    InstallDownloadedApplication;
+  except
+    if not ErrorWasReported then
+      ReportInstallError('Xử lý bộ cài', 'SETUP', 1, GetExceptionMessage, '');
+    Abort;
+  end;
 end;

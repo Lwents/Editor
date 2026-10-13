@@ -54,3 +54,14 @@ Its log is saved in `%LOCALAPPDATA%/LwentEditor/InstallerLogs`, and a failure
 message gives the exact log path. Personal data is not removed during retry.
 After a successful installation the runtime download cache is cleared; uninstall
 also clears this cache and its diagnostic logs.
+
+Each install session records its stages in a UTF-8 session log. Failures show a
+Vietnamese explanation and a code qualified by the failed component, such as
+`LW-RUNTIME-4`, `LW-WINDOWS-4551`, or `LW-UPDATE-20`. Runtime exit code 4 is a
+general installation failure, not a diagnosis of corrupt project data.
+The error dialog provides buttons to open the log folder and copy the report;
+it also saves the report to a text file. Silent setup saves reports without
+opening a dialog. Runtime, update and uninstaller maintenance steps each have
+their own detailed log. Update failures classify checksum/format/access/disk/
+file-lock/shortcut errors separately. Logs do not load API keys or browser
+cookies, and are never uploaded automatically.
