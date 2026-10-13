@@ -121,6 +121,7 @@ function ProjectDropdown() {
 						<Image
 							src={DEFAULT_LOGO_URL}
 							alt="Lwent Editor"
+							unoptimized
 							width={32}
 							height={32}
 							className="size-7 rounded-sm"
