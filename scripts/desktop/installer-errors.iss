@@ -23,6 +23,8 @@ begin
   Result := 'Chưa xác định được nguyên nhân. Xem log chi tiết hoặc gửi báo cáo lỗi để kiểm tra.';
   if Kind = 'DOWNLOAD' then
     Result := 'Không tải hoặc kiểm tra được dữ liệu. Xem chi tiết dưới đây, kiểm tra kết nối rồi thử lại.';
+  if (Kind = 'DOWNLOAD') and (Code = 20) then
+    Result := 'File tải về sai SHA256. Bộ cài chưa dùng file này. Chạy lại để kiểm tra và tải lại dữ liệu.';
   if Kind = 'RUNTIME' then
     case Code of
       1: Result := 'Không khởi tạo được bộ cài. Kiểm tra log và quyền truy cập thư mục cài đặt.';

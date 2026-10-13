@@ -2,6 +2,10 @@
 #include "installer-cache.iss"
 #include DataInclude
 #include "installer-errors.iss"
+[Code]
+function GetCurrentProcessId: Integer;
+  external 'GetCurrentProcessId@kernel32.dll stdcall';
+#include "installer-download.iss"
 [Setup]
 AppId=LwentEditorOnlineInstaller
 AppName={#AppName}
@@ -15,25 +19,37 @@ OutputBaseFilename=Lwent-Editor-Online-Setup
 SetupIconFile=assets\app-logo.ico
 WizardStyle=modern
 Uninstallable=no
-CreateAppDir=no
+CreateAppDir=yes
+DisableDirPage=no
 DisableProgramGroupPage=yes
 Compression=lzma2
 SetupLogging=yes
 [Files]
+Source: "{#DownloadTools}\aria2c.exe"; Flags: dontcopy
+Source: "{#DownloadTools}\COPYING"; Flags: dontcopy
+Source: "{#DownloadTools}\LICENSE.OpenSSL"; Flags: dontcopy
+Source: "online-download.ps1"; Flags: dontcopy
+Source: "{#DownloadManifest}"; DestName: "installation-downloads.json"; Flags: dontcopy
 Source: "online-finalize.py"; Flags: dontcopy
 Source: "apply-update.py"; Flags: dontcopy
 Source: "{#Output}\Lwent-Uninstall-Maintenance.exe"; Flags: dontcopy
 [Run]
 Filename: "{app}\Editor.exe"; Description: "Mở Lwent Editor"; Flags: nowait postinstall skipifsilent
 [Code]
-var DownloadPage: TDownloadWizardPage;
 procedure InitializeWizard;
 begin
   StartInstallLog;
   InstallEvent('Khởi tạo bộ cài');
   WizardForm.WelcomeLabel2.Caption := 'Bộ cài sẽ tải dữ liệu từ GitHub rồi tự cài Lwent Editor. Cần Internet và dung lượng trống cho dữ liệu tải về cùng ứng dụng. Hãy đóng Lwent Editor trước khi cài.';
-  DownloadPage := CreateDownloadPage('Đang tải Lwent Editor', 'Đang tải và kiểm tra dữ liệu cài đặt. Có thể mất thời gian tùy tốc độ mạng.', nil);
-  DownloadPage.ShowBaseNameInsteadOfUrl := True;
+  FastDownloadPage := CreateOutputProgressPage('Đang tải Lwent Editor', 'Tải song song, tự tiếp tục phần đã tải và kiểm tra dữ liệu.');
+  FastDownloadPage.Msg2Label.Height := ScaleY(60);
+  FastDownloadPage.Msg2Label.AutoSize := False;
+  FastDownloadPage.ProgressBar.Top := ScaleY(86);
+  StopDownloadButton := TNewButton.Create(WizardForm);
+  StopDownloadButton.Parent := FastDownloadPage.Surface;
+  StopDownloadButton.SetBounds(0, ScaleY(140), ScaleX(140), ScaleY(28));
+  StopDownloadButton.Caption := 'Dừng tải';
+  StopDownloadButton.OnClick := @StopFastDownload;
 end;
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
@@ -43,24 +59,12 @@ begin
   ErrorWasReported := False;
   InstallEvent('Bắt đầu tải và kiểm tra SHA256 dữ liệu');
   try
-    try
-      DownloadPage.Clear;
-      AddInstallationDownloads(DownloadPage);
-      DownloadPage.Show;
-      DownloadPage.Download;
-      PreserveRuntimeDownloads;
-      InstallEvent('Đã tải và kiểm tra xong dữ liệu');
-    except
-      Result := False;
-      if not DownloadPage.AbortedByUser then
-      begin
-        DownloadPage.Hide;
-        ReportInstallError('Tải hoặc kiểm tra dữ liệu', 'DOWNLOAD', 1, GetExceptionMessage, '');
-      end
-      else InstallEvent('Người dùng dừng tải dữ liệu');
-    end;
-  finally
-    DownloadPage.Hide;
+    Result := DownloadInstallation;
+    if Result then InstallEvent('Đã tải và kiểm tra xong dữ liệu');
+  except
+    Result := False;
+    if not ErrorWasReported then
+      ReportInstallError('Chuẩn bị tải dữ liệu', 'DOWNLOAD', 1, GetExceptionMessage, '');
   end;
 end;
 procedure InstallDownloadedApplication;
@@ -69,7 +73,7 @@ begin
   WizardForm.StatusLabel.Caption := 'Đang cài Lwent Editor…';
   InstallEvent('Bắt đầu cài runtime vào ' + ExpandConstant('{app}'));
   RuntimeSetup := InstallerCache + '\Editor-Setup-Windows-x64.exe';
-  if not RuntimeCacheComplete then RuntimeSetup := ExpandConstant('{tmp}\Editor-Setup-Windows-x64.exe');
+  if not RuntimeCacheComplete then RaiseException('Cache runtime thiếu file sau khi tải.');
   ForceDirectories(ExpandConstant('{localappdata}\LwentEditor\InstallerLogs'));
   RuntimeLog := ExpandConstant('{localappdata}\LwentEditor\InstallerLogs\runtime-') + GetDateTimeString('yyyymmdd-hhnnss', '-', ':') + '.log';
   if not Exec(RuntimeSetup, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /DIR="' + ExpandConstant('{app}') + '" /LOG="' + RuntimeLog + '"', ExtractFileDir(RuntimeSetup), SW_HIDE, ewWaitUntilTerminated, ExitCode) then
@@ -101,6 +105,10 @@ begin
     Abort;
   end;
   InstallEvent('Đã áp dụng cập nhật');
+  ExtractTemporaryFile('COPYING');
+  ExtractTemporaryFile('LICENSE.OpenSSL');
+  FileCopy(ExpandConstant('{tmp}\COPYING'), ExpandConstant('{app}\resources\app\aria2-COPYING.txt'), False);
+  FileCopy(ExpandConstant('{tmp}\LICENSE.OpenSSL'), ExpandConstant('{app}\resources\app\aria2-LICENSE.OpenSSL.txt'), False);
   ExtractTemporaryFile('Lwent-Uninstall-Maintenance.exe');
   WizardForm.StatusLabel.Caption := 'Đang cập nhật bộ gỡ cài đặt…';
   MaintenanceLog := InstallLogFolder + '\uninstaller-' + InstallSessionId + '.log';
