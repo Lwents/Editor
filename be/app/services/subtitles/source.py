@@ -15,7 +15,7 @@ from app.services.ai.translation import get_translation_engine, TRANSLATION_POLI
 from app.services.media.ffmpeg import find_ffmpeg
 from app.services.subtitles.ass import write_srt
 from app.services.subtitles.timing import group_subtitle_events, parse_srt, split_long_subtitle_events
-from app.services.subtitles.visible import visible_source_subtitles
+from app.services.subtitles.visible import ALGORITHM_VERSION, visible_source_subtitles
 
 
 class SubtitleSourceError(RuntimeError):
@@ -33,6 +33,9 @@ def _validated_target(target: Path, work_dir: Path, source_video: Path | None) -
     from app.services.ai.asr_cache import digest
     try:
         marker = json.loads((work_dir / 'translation_quality.json').read_text(encoding='utf-8'))
+        if (source_video is not None and (work_dir / 'subtitles.recognition.json').is_file()
+                and marker.get('recognition_version') != ALGORITHM_VERSION):
+            return False
         return (marker.get('policy') == TRANSLATION_POLICY_VERSION
                 and marker.get('review_completed') is True
                 and marker.get('engine') == settings.translation_engine
@@ -376,6 +379,7 @@ async def _prepare_target_subtitles_impl(
     from app.services.ai.asr_cache import digest
     pending = work_dir / 'translation_quality.pending.json'
     pending.write_text(json.dumps({'policy': TRANSLATION_POLICY_VERSION,
+        'recognition_version': ALGORITHM_VERSION if visible_file else None,
         'engine': settings.translation_engine,
         'model': 'Gemini Web' if settings.translation_engine == 'gemini_web' else settings.ai_model,
         'video': _quality_signature(source_video), 'sha256': digest(target),

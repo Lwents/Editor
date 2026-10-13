@@ -11,7 +11,16 @@ from pathlib import Path
 
 from app.services.subtitles.timing import SubtitleEvent
 
-VERSION = 2
+VERSION = 4
+
+
+def _caption_gap(events, index):
+    if index <= 0:
+        return None
+    previous, current = events[index - 1], events[index]
+    if previous.text == current.text and .04 < current.start - previous.end <= .10:
+        return {'start': previous.end, 'end': current.start}
+    return None
 
 
 def _safe_context(context):
@@ -50,6 +59,17 @@ def _candidate_ids(events, report):
         evidence = next((cue for cue in cues if abs(float(cue.get('start', -10)) - event.start) < .06 and abs(float(cue.get('end', -10)) - event.end) < .06), {})
         if evidence.get('needs_review') or float(evidence.get('confidence', 1)) < .85 or event.end - event.start < .3:
             result.append(i + 1)
+    # High-confidence OCR can alternate one glyph (爭/争, 王/主) while the
+    # displayed caption stays unchanged. Verify both images before merging;
+    # don't translate that flicker as two repeated lines of dialogue.
+    for i, (before, after) in enumerate(zip(events, events[1:])):
+        if (0 <= after.start - before.end <= .04
+                and before.text != after.text
+                and min(len(before.text), len(after.text)) >= 4
+                and SequenceMatcher(None, before.text, after.text).ratio() >= .80):
+            result.extend((i + 1, i + 2))
+        if _caption_gap(events, i + 1):
+            result.extend((i + 1, i + 2))
     selected = set(result)
     for item_id in list(selected):
         event = events[item_id - 1]
@@ -68,6 +88,7 @@ def _frame_sheet(source: Path, events, ids, target: Path):
     from PIL import Image, ImageDraw
     cap = cv2.VideoCapture(str(source))
     tiles = []
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30
     try:
         for item_id in ids:
             event = events[item_id - 1]
@@ -85,6 +106,22 @@ def _frame_sheet(source: Path, events, ids, target: Path):
             ImageDraw.Draw(tile).text((8, 8), f'ID {item_id} | {at:.3f}s', fill='black')
             tile.paste(scene, (0, 30)); tile.paste(strip, (0, scene.height + 35))
             tiles.append(tile)
+            gap = _caption_gap(events, item_id - 1)
+            if gap:
+                import math
+                # Evidence must include EVERY missing frame before a gap can
+                # be bridged, rather than guessing from its two neighbours.
+                for frame_index in range(math.ceil(gap['start'] * fps), math.ceil(gap['end'] * fps)):
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
+                    ok, gap_frame = cap.read()
+                    if not ok:
+                        raise RuntimeError(f'Không đọc được frame trống trước câu {item_id}.')
+                    gap_image = Image.fromarray(cv2.cvtColor(gap_frame, cv2.COLOR_BGR2RGB))
+                    gap_strip = gap_image.crop((0, int(height * .65), width, height))
+                    gap_strip.thumbnail((1000, 210))
+                    gap_tile = Image.new('RGB', (1000, gap_strip.height + 35), 'white')
+                    ImageDraw.Draw(gap_tile).text((8, 8), f'ID {item_id} GAP BEFORE | {frame_index / fps:.3f}s', fill='black')
+                    gap_tile.paste(gap_strip, (0, 35)); tiles.append(gap_tile)
     finally:
         cap.release()
     sheet = Image.new('RGB', (1000, sum(tile.height for tile in tiles)), 'white')
@@ -123,12 +160,21 @@ def apply_review(events, ids, items):
         text = event.text
         if decision and decision['is_caption'] and decision['confidence'] >= .9 and decision['source'].strip():
             text = decision['source'].strip()
-        result.append(SubtitleEvent(event.start, event.end, text))
+        previous_decision = decisions.get(item_id - 1)
+        if (_caption_gap(events, item_id - 1) and result and decision and previous_decision
+                and decision.get('gap_is_caption') is True
+                and decision['is_caption'] and previous_decision['is_caption']
+                and min(decision['confidence'], previous_decision['confidence']) >= .95
+                and result[-1].text == text):
+            previous = result.pop()
+            result.append(SubtitleEvent(previous.start, event.end, text))
+        else:
+            result.append(SubtitleEvent(event.start, event.end, text))
     return merge_caption_fragments(result), decisions
 
 
 async def review_visible_captions(source: Path, events, work_dir: Path, progress):
-    from app.services.ai.gemini_web import browser
+    from app.services.ai.gemini_web import GeminiWebError, browser
     report_file = work_dir / 'subtitles.recognition.json'
     report = json.loads(report_file.read_text(encoding='utf-8')) if report_file.is_file() else {}
     ids = _candidate_ids(events, report)
@@ -157,18 +203,28 @@ async def review_visible_captions(source: Path, events, work_dir: Path, progress
         context_ids = set(range(1, min(len(events), 12) + 1)) | set(range(max(1, len(events) - 11), len(events) + 1))
         for item_id in batch_ids:
             context_ids.update(range(max(1, item_id - 4), min(len(events), item_id + 4) + 1))
-        payload = {'current_items': [{'id': i, 'source': events[i - 1].text, 'time': [events[i - 1].start, events[i - 1].end]} for i in batch_ids], 'caption_context': [{'id': i, 'source': events[i - 1].text} for i in sorted(context_ids)]}
+        payload = {'current_items': [{'id': i, 'source': events[i - 1].text, 'time': [events[i - 1].start, events[i - 1].end], 'gap_before': _caption_gap(events, i - 1)} for i in batch_ids], 'caption_context': [{'id': i, 'source': events[i - 1].text} for i in sorted(context_ids)]}
         prompt = (
             'Kiểm tra OCR phụ đề phim bằng ẢNH đính kèm. Ảnh có từng ô ID, cảnh đầy đủ và phần chữ phóng lớn. '
             'Đọc lại đúng chữ gốc hiển thị ở mỗi ID, không dịch trong bước này. Chữ cùng tên ở hai ô phải chép cùng tên nếu ảnh xác nhận. '
             'Phân biệt lời thoại với watermark/logo/chữ nền: chỉ đánh is_caption=false khi nhìn ảnh chắc chắn không phải phụ đề. '
             'Không đoán tên hoặc câu từ OCR sai khi ảnh không rõ; confidence thấp để giữ nguyên và đánh dấu cần xem lại. '
+            'Nếu có gap_before và ảnh GAP BEFORE, thêm gap_is_caption=true CHỈ khi MỌI frame khoảng trống vẫn hiển thị cùng câu đó; '
+            'nếu chữ biến mất, đổi câu hoặc không chắc thì gap_is_caption=false. Không suy đoán từ hai ảnh liền trước/sau. '
             'Mỗi item có id, text (chỉ chữ gốc đã đọc trên ảnh; nếu không phải phụ đề dùng chính xác __NON_CAPTION__), is_caption (boolean), confidence (0..1), reason. Không lồng chuỗi JSON vào text. '
             'items đủ id, không rỗng. memory_updates có thể ghi characters, glossary, addressing_rules khi ảnh/chữ có bằng chứng, không tự suy đoán vợ chồng. Characters.name phải là tên tiếng Việt chuẩn; chữ gốc đặt trong aliases, không dùng tên chữ Trung làm tên tiếng Việt bắt buộc. '
             'Chỉ trả JSON items và memory_updates.'
         )
-        reply = json.loads(await browser.complete([{'role': 'system', 'content': prompt}, {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}], timeout=180, attachments=[sheet]))
-        apply_review(events, batch_ids, reply.get('items'))
+        for attempt in range(2):
+            try:
+                reply = json.loads(await browser.complete([{'role': 'system', 'content': prompt}, {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}], timeout=180, attachments=[sheet]))
+                apply_review(events, batch_ids, reply.get('items'))
+                break
+            except (GeminiWebError, ValueError, RuntimeError) as exc:
+                if attempt == 1:
+                    raise RuntimeError(f'Kiểm tra ảnh chưa xong ({start}/{len(ids)} đoạn). '
+                                       'Đã giữ OCR và checkpoint để chạy tiếp.') from exc
+                progress(f'Gemini chưa trả đủ kết quả; thử lại nhóm ảnh ({start}/{len(ids)} đoạn)', 66)
         items.extend(reply['items'])
         memory = reply.get('memory_updates')
         if isinstance(memory, dict):

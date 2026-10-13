@@ -20,7 +20,7 @@ from app.services.subtitles.ass import write_srt
 from app.services.subtitles.timing import SubtitleEvent
 from app.services.subtitles.ocr import get_reader, read_lines, read_known_band, discover_regions, recognition_language, text_key
 
-ALGORITHM_VERSION = 12
+ALGORITHM_VERSION = 13
 
 _locks: dict[str, asyncio.Lock] = {}
 
@@ -146,8 +146,20 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
         ocr_calls += 1
         fresh_frames.add(index)
         scale = min(2., 1280 / width)
-        lines = read_lines(reader, cv2.resize(stack, None, fx=scale, fy=scale))
-        lines = [line for line in lines if line[2] - line[0] >= width * scale * .08]
+        detector_input = cv2.resize(stack, None, fx=scale, fy=scale)
+        padding = 0
+        if language == 'ch':
+            # Thin coloured subtitle strips made the detector miss clear white
+            # captions. Grayscale plus vertical context recovers these without
+            # an additional model pass (including short names and replies).
+            detector_input = cv2.cvtColor(detector_input, cv2.COLOR_BGR2GRAY)
+            padding = max(16, round(detector_input.shape[0] * .5))
+            detector_input = cv2.copyMakeBorder(detector_input, padding, padding, 0, 0,
+                                                cv2.BORDER_CONSTANT, value=127)
+        lines = read_lines(reader, detector_input, caption_region=True)
+        lines = [(x1, y1-padding, x2, y2-padding, text, confidence)
+                 for x1, y1, x2, y2, text, confidence in lines
+                 if y2 > padding and y1 < padding + stack.shape[0] * scale]
         offsets, cursor = [], 0
         for crop in crops:
             offsets.append((cursor * scale, (cursor + crop.shape[0]) * scale))
@@ -162,6 +174,12 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
                 cjk_lines = [line for line in band_lines if re.search(r'[\u3400-\u9fff\u3040-\u30ff]', line[4])]
                 if cjk_lines:
                     band_lines = cjk_lines
+                else:
+                    # In a CJK subtitle band, texture can look like Latin
+                    # letters when the caption is absent. A genuine Latin
+                    # caption still needs strong independent OCR evidence.
+                    band_lines = [line for line in band_lines
+                                  if line[5] >= .95 and sum(c.isalpha() for c in line[4]) >= 2]
             if not band_lines:
                 continue
             text = ' '.join(line[4] for line in band_lines)

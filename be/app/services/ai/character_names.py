@@ -50,6 +50,19 @@ _ALIAS_FIELDS = {
     "ocr_variants",
 }
 
+# Character profiles also list forms of address. They identify the speaker's
+# relationship, but must not be rewritten as the person's full name in dialogue.
+_ADDRESS_ALIASES = {
+    "王爷", "殿下", "陛下", "皇上", "母妃", "父皇", "公子", "大人",
+    "vương gia", "điện hạ", "bệ hạ", "hoàng thượng", "mẫu phi", "phụ hoàng",
+    "công tử", "đại nhân", "thuộc hạ", "mẹ", "cha", "con", "huynh", "tỷ",
+}
+
+
+def _is_address_alias(value: str) -> bool:
+    return (value.casefold() in _ADDRESS_ALIASES
+            or value.endswith("儿") or value.casefold().endswith(" nhi"))
+
 _GLOSSARY_SOURCE_FIELDS = (
     "source",
     "asr_error",
@@ -241,6 +254,8 @@ def _register_name(
     registry.setdefault(canonical, canonical)
     for raw_alias in aliases:
         for alias in _alias_values(raw_alias):
+            if alias != canonical and _is_address_alias(alias):
+                continue
             if len(_name_key(alias).replace(" ", "")) < 2:
                 continue
             registry.setdefault(alias, canonical)

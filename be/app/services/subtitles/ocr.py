@@ -92,7 +92,7 @@ def get_reader(language: str):
     return reader
 
 
-def read_lines(reader, image, minimum=.60):
+def read_lines(reader, image, minimum=.60, *, caption_region=False):
     with _inference_lock:
         result = reader(image)
     if result.boxes is None or result.txts is None:
@@ -100,7 +100,11 @@ def read_lines(reader, image, minimum=.60):
     lines = []
     for box, text, confidence in zip(result.boxes, result.txts, result.scores):
         text = unicodedata.normalize('NFC', text.strip())
-        if float(confidence) < minimum or sum(c.isalpha() for c in text) < 2:
+        letters = sum(c.isalpha() for c in text)
+        # A confirmed subtitle band can contain a complete one-character reply
+        # (是 / 好 / 嗯). Keep the stricter rule when discovering unknown bands.
+        short_caption = caption_region and letters == 1 and float(confidence) >= .85
+        if float(confidence) < minimum or (letters < 2 and not short_caption):
             continue
         x1, y1 = map(float, box.min(axis=0))
         x2, y2 = map(float, box.max(axis=0))
@@ -130,7 +134,9 @@ def read_lines(reader, image, minimum=.60):
                 continue
             with _inference_lock:
                 text, probability = predictor.predict(Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)), return_prob=True)
-            if probability is not None and probability >= minimum and sum(c.isalpha() for c in text) >= 2:
+            letters = sum(c.isalpha() for c in text)
+            valid_text = letters >= 2 or (caption_region and letters == 1 and probability is not None and probability >= .85)
+            if probability is not None and probability >= minimum and valid_text:
                 combined.append((x1, y1, x2, y2, unicodedata.normalize('NFC', text.strip()), float(probability)))
         return combined
     return [line for row in rows for line in sorted(row, key=lambda r: r[0])]

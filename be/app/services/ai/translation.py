@@ -40,7 +40,7 @@ class TranslationBatchStructureError(TranslationError):
         self.updates = updates or {}
 
 
-TRANSLATION_POLICY_VERSION = 3
+TRANSLATION_POLICY_VERSION = 5
 
 
 def create_translation_client():
@@ -515,11 +515,20 @@ async def _translate_gemini_batch(
         "得寸进尺 là lấn tới/được đằng chân lân đằng đầu; không đổi thành chuyện tiền bạc. "
         "吃人的皇城 là ẩn dụ hoàng thành tàn khốc, không khẳng định có tình tiết ăn thịt người. "
         "垫脚石 là bàn đạp, phải giữ ý bị lợi dụng; không làm mất sắc thái bằng từ 'thứ'.\n"
+        "- Khẩu ngữ bực bội/độc thoại hài phải có nghĩa tương đương trong tiếng Việt: "
+        "喂你个锤锤 là lời phản bác kiểu 'Đút cái con khỉ!', không phải hành động đút một cái búa. "
+        "Không thêm meme, drama hoặc lời chửi ngoài mức độ câu nguồn.\n"
+        "- Chọn động từ tự nhiên theo hành động: 自己去领二十军棍 là 'Tự đi chịu hai mươi quân côn'. "
+        "Giữ số lượng, người chịu phạt và mức độ mệnh lệnh; tránh bê nguyên cấu trúc Hán ngữ.\n"
         "- Xưng hô nhất quán với vai vế: thoại cung đình ta/ngươi, mẫu phi/con, vương gia/thuộc hạ; "
         "không tự đổi sang tao/mày. Giữ sắc thái giận dữ, mỉa mai và lời đe dọa của nguồn. "
         "Phân biệt nội tâm với lời đáp ngoài miệng; không gộp hoặc đảo ý hai loại lời này.\n"
+        "- Đại từ 他 phải phù hợp thái độ người nói; không mặc định dịch thành 'người' mang sắc thái kính trọng "
+        "khi người nói đang oán trách kẻ lợi dụng, hại gia đình mình.\n"
         "- CHARACTER_NAME_CONTRACT là bắt buộc: khi nhắc nhân vật phải chép đúng canonical_names, không dịch nghĩa tên riêng, "
-        "không dùng alias và không đổi tên giữa các batch.\n"
+        "không dùng alias tên riêng và không đổi tên giữa các batch. "
+        "Giữ cách gọi trong câu nguồn: 王爷 là Vương gia, 池儿 là Trì nhi; "
+        "không thay tước vị, cách gọi thân mật hay quan hệ bằng tên đầy đủ của nhân vật.\n"
         "- Chỉ xác định giới tính, vai vế hoặc quan hệ khi câu nguồn/ngữ cảnh có bằng chứng; chưa chắc thì dùng cách gọi trung tính.\n"
         "- PREVIOUS_CONTEXT và NEXT_CONTEXT chỉ giúp hiểu đại từ/người nói; tuyệt đối không dịch chúng vào items.\n"
         "- Với câu rút gọn hoặc đại từ hồi chỉ, khôi phục đúng hành động/đối tượng đã nêu ở câu trước khi tiếng Việt cần để rõ nghĩa; không đổi chủ thể và không thêm thông tin ngoài nguồn.\n"
