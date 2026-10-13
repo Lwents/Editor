@@ -1,1 +1,1 @@
-{"name":"Lwent Editor","short_name":"Lwent Editor","description":"Chỉnh sửa video, dịch phụ đề và thuyết minh","display":"standalone","start_url":"/projects","icons":[{"src":"/editor-logo.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}]}
+{"name":"Lwent Editor","short_name":"Lwent Editor","description":"Chỉnh sửa video, dịch phụ đề và thuyết minh","display":"standalone","start_url":"/projects","icons":[{"src":"/editor-logo.png","sizes":"785x790","type":"image/png","purpose":"any"}]}
