@@ -22,7 +22,7 @@ app.on('before-quit',e=>{if(!quitting&&children.length){e.preventDefault();quitt
 app.on('window-all-closed',()=>app.quit());
 app.whenReady().then(async()=>{
  fs.mkdirSync(path.join(data,'logs'),{recursive:true});
- mainWindow=new BrowserWindow({width:1440,height:930,minWidth:1000,minHeight:680,title:'Lwent Editor',backgroundColor:'#12141b',autoHideMenuBar:false,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false}});
+ mainWindow=new BrowserWindow({width:1440,height:930,minWidth:1000,minHeight:680,title:'Lwent Editor',backgroundColor:'#ffffff',autoHideMenuBar:false,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false}});
  mainWindow.loadFile(path.join(__dirname,'loading.html'));
  const updater=require('./updates.cjs').createUpdater(mainWindow,stop);
  mainWindow.webContents.setWindowOpenHandler(({url})=>{if(/^https?:\/\//.test(url))require('electron').shell.openExternal(url);return {action:'deny'};});
