@@ -42,3 +42,15 @@ to delete the login profile. A custom `EDITOR_USER_DATA` directory is retained.
 
 Previously installed copies need to run the new online installer once to receive
 this uninstall policy; a code-only update does not replace their uninstaller.
+
+## Installation failure and retry
+
+Verified runtime downloads are preserved in
+`%LOCALAPPDATA%/LwentEditor/InstallerCache` before running the base setup. The
+wizard reuses these files after checking their SHA256. On NTFS, hard links avoid
+duplicating the multi-gigabyte downloads; other filesystems fall back to copying.
+The child setup runs from that stable folder with an explicit working directory.
+Its log is saved in `%LOCALAPPDATA%/LwentEditor/InstallerLogs`, and a failure
+message gives the exact log path. Personal data is not removed during retry.
+After a successful installation the runtime download cache is cleared; uninstall
+also clears this cache and its diagnostic logs.

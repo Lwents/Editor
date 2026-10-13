@@ -9,6 +9,8 @@
 Type: filesandordirs; Name: "{app}\resources"
 Type: filesandordirs; Name: "{app}\locales"
 Type: filesandordirs; Name: "{userappdata}\{#DesktopDataName}\updates"
+Type: filesandordirs; Name: "{localappdata}\{#GeminiDataName}\InstallerCache"
+Type: filesandordirs; Name: "{localappdata}\{#GeminiDataName}\InstallerLogs"
 Type: dirifempty; Name: "{localappdata}\{#GeminiDataName}"
 Type: dirifempty; Name: "{app}"
 

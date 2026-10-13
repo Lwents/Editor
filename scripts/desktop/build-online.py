@@ -29,8 +29,17 @@ def generate(runtime: Path, manifest: dict, metadata_only: bool = False) -> str:
         raise ValueError('Incomplete runtime')
     lines = [f'#define UpdateVersion "{version}"', f'#define UpdateHash "{digest}"', '[Code]', 'procedure AddInstallationDownloads(Page: TDownloadWizardPage);', 'begin']
     for filename, checksum in checksums.items():
+        lines.append(f"  RestoreRuntimeFile('{filename}', '{checksum}');")
         lines.append(f"  Page.Add('{BASE_URL}{filename}', '{filename}', '{checksum}');")
     lines.append(f"  Page.Add('https://github.com/Lwents/Editor/releases/download/v{version}/Editor-Update-Windows-x64.zip', 'Editor-Update-Windows-x64.zip', '{digest}');")
+    lines.append('end;')
+    lines.extend(['procedure PreserveRuntimeDownloads;', 'begin'])
+    for filename, checksum in checksums.items():
+        lines.append(f"  PreserveRuntimeFile('{filename}', '{checksum}');")
+    lines.append('end;')
+    lines.extend(['function RuntimeCacheComplete: Boolean;', 'begin', '  Result := True;'])
+    for filename in checksums:
+        lines.append(f"  Result := Result and FileExists(InstallerCache + '\\{filename}');")
     lines.append('end;')
     return '\n'.join(lines) + '\n'
 

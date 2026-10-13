@@ -1,4 +1,5 @@
 #define AppName "Lwent Editor"
+#include "installer-cache.iss"
 #include DataInclude
 [Setup]
 AppId=LwentEditorOnlineInstaller
@@ -40,6 +41,7 @@ begin
   try
     try
       DownloadPage.Download;
+      PreserveRuntimeDownloads;
     except
       Result := False;
       if not DownloadPage.AbortedByUser then
@@ -50,14 +52,20 @@ begin
   end;
 end;
 procedure CurStepChanged(CurStep: TSetupStep);
-var ExitCode: Integer; Python, Parameters: String;
+var ExitCode: Integer; Python, Parameters, RuntimeSetup, RuntimeLog: String;
 begin
   if CurStep <> ssInstall then exit;
   WizardForm.StatusLabel.Caption := 'Đang cài Lwent Editor…';
-  if not Exec(ExpandConstant('{tmp}\Editor-Setup-Windows-x64.exe'), '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /DIR="' + ExpandConstant('{app}') + '"', '', SW_HIDE, ewWaitUntilTerminated, ExitCode) then
+  RuntimeSetup := InstallerCache + '\Editor-Setup-Windows-x64.exe';
+  if not RuntimeCacheComplete then RuntimeSetup := ExpandConstant('{tmp}\Editor-Setup-Windows-x64.exe');
+  ForceDirectories(ExpandConstant('{localappdata}\LwentEditor\InstallerLogs'));
+  RuntimeLog := ExpandConstant('{localappdata}\LwentEditor\InstallerLogs\runtime-') + GetDateTimeString('yyyymmdd-hhnnss', '-', ':') + '.log';
+  if not Exec(RuntimeSetup, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /DIR="' + ExpandConstant('{app}') + '" /LOG="' + RuntimeLog + '"', ExtractFileDir(RuntimeSetup), SW_HIDE, ewWaitUntilTerminated, ExitCode) then
     RaiseException('Không chạy được bộ cài: ' + SysErrorMessage(ExitCode));
   if (ExitCode <> 0) and (ExitCode <> 3010) then
-    RaiseException('Bộ cài thất bại, mã lỗi: ' + IntToStr(ExitCode));
+    RaiseException('Bộ cài thất bại, mã lỗi: ' + IntToStr(ExitCode) + '.' + #13#10 +
+      'Dữ liệu cá nhân được giữ nguyên. File tải đã được giữ để thử lại.' + #13#10 +
+      'Nhật ký lỗi: ' + RuntimeLog);
   ExtractTemporaryFile('online-finalize.py');
   ExtractTemporaryFile('apply-update.py');
   Python := ExpandConstant('{app}\resources\bundle\python\python.exe');
@@ -75,4 +83,5 @@ begin
     RaiseException('Không cập nhật được bộ gỡ cài đặt: ' + SysErrorMessage(ExitCode));
   if ExitCode <> 0 then
     RaiseException('Không cập nhật được bộ gỡ cài đặt. Mã lỗi: ' + IntToStr(ExitCode));
+  DelTree(InstallerCache, True, True, True);
 end;
