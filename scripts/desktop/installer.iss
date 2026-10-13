@@ -19,12 +19,13 @@ SlicesPerDisk=1
 LZMANumBlockThreads=4
 WizardStyle=modern
 UninstallDisplayIcon={app}\Editor.exe
+SetupIconFile=assets\app-logo.ico
 DisableProgramGroupPage=yes
 CloseApplications=no
 [Files]
 Source: "{#Payload}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 [Icons]
-Name: "{group}\Lwent Editor"; Filename: "{app}\Editor.exe"
-Name: "{autodesktop}\Lwent Editor"; Filename: "{app}\Editor.exe"
+Name: "{group}\Lwent Editor"; Filename: "{app}\Editor.exe"; IconFilename: "{app}\resources\app\assets\app-logo.ico"
+Name: "{autodesktop}\Lwent Editor"; Filename: "{app}\Editor.exe"; IconFilename: "{app}\resources\app\assets\app-logo.ico"
 [Run]
 Filename: "{app}\Editor.exe"; Description: "Mở Lwent Editor"; Flags: nowait postinstall skipifsilent

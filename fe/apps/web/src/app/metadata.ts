@@ -5,7 +5,7 @@ export const baseMetaData: Metadata = {
  title: SITE_INFO.title,
  description: SITE_INFO.description,
  openGraph: {title: SITE_INFO.title, description: SITE_INFO.description, siteName: SITE_INFO.title, locale: "vi_VN", type: "website"},
- icons: {icon: [{url: "/editor-logo.svg", type: "image/svg+xml"}], apple: "/editor-logo.svg"},
+ icons: {icon: [{url: "/editor-logo.png", type: "image/png"}], apple: "/editor-logo.png"},
  appleWebApp: {capable: true, title: SITE_INFO.title},
  manifest: "/manifest.json",
 };
