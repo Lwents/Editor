@@ -30,7 +30,7 @@ var DownloadPage: TDownloadWizardPage;
 procedure InitializeWizard;
 begin
   StartInstallLog;
-  InstallEvent('Khởi tạo bộ cài. Thư mục mặc định: ' + ExpandConstant('{app}'));
+  InstallEvent('Khởi tạo bộ cài');
   WizardForm.WelcomeLabel2.Caption := 'Bộ cài sẽ tải dữ liệu từ GitHub rồi tự cài Lwent Editor. Cần Internet và dung lượng trống cho dữ liệu tải về cùng ứng dụng. Hãy đóng Lwent Editor trước khi cài.';
   DownloadPage := CreateDownloadPage('Đang tải Lwent Editor', 'Đang tải và kiểm tra dữ liệu cài đặt. Có thể mất thời gian tùy tốc độ mạng.', nil);
   DownloadPage.ShowBaseNameInsteadOfUrl := True;
@@ -39,6 +39,7 @@ function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
   if CurPageID <> wpReady then exit;
+  InstallEvent('Thư mục cài đã chọn: ' + ExpandConstant('{app}'));
   ErrorWasReported := False;
   InstallEvent('Bắt đầu tải và kiểm tra SHA256 dữ liệu');
   try
