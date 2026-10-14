@@ -17,8 +17,10 @@ if os.name == 'nt':
     if installation:
         vcvars = Path(installation) / 'VC/Auxiliary/Build/vcvars64.bat'
         obj = output.with_suffix('.obj')
-        subprocess.run(['cmd.exe', '/d', '/c',
-            f'call "{vcvars}" >nul && cl /nologo /O2 /LD /MT /EHsc "{source}" /Fo"{obj}" /link /OUT:"{output}"'], check=True)
+        command = f'call "{vcvars}" >nul && cl /nologo /O2 /LD /MT /EHsc "{source}" /Fo"{obj}" /link /OUT:"{output}"'
+        # cmd has its own quoting rules. Passing this as a list would turn
+        # the inner quotes into literal backslash-quotes on Windows.
+        subprocess.run('cmd.exe /d /c ' + command, check=True)
     else:
         zig = importlib.util.find_spec('ziglang')
         compiler = Path(zig.origin).parent / 'zig.exe' if zig else root / 'be/.venv/Lib/site-packages/ziglang/zig.exe'
