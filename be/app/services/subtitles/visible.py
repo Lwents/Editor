@@ -18,10 +18,10 @@ from app.services.ai import asr_cache
 
 from app.services.subtitles.ass import write_srt
 from app.services.subtitles.timing import SubtitleEvent
-from app.services.subtitles.ocr import get_reader, read_lines, read_known_band, discover_regions, recognition_language, text_key
+from app.services.subtitles.ocr import get_reader, read_lines, read_known_band, discover_regions, recognition_language, text_key, has_caption_strokes, read_caption_fallback
 from app.services.subtitles.frame_processing import caption_masks, compare_masks, native_library, FrameCache
 
-ALGORITHM_VERSION = 15
+ALGORITHM_VERSION = 16
 
 _locks: dict[str, asyncio.Lock] = {}
 
@@ -30,6 +30,31 @@ def _same_text(a: str, b: str) -> bool:
     if not a or not b:
         return a == b
     return SequenceMatcher(None, text_key(a), text_key(b)).ratio() >= 0.85
+
+
+def _caption_reference(work_dir: Path) -> Path | None:
+    """Do not turn our own OCR output into a new ASR reference on retry."""
+    reference = work_dir / 'subtitles.source.srt'
+    if not reference.is_file():
+        return None
+    try:
+        origin = json.loads((work_dir / 'subtitles.source.origin.json').read_text(encoding='utf-8'))
+        if isinstance(origin, dict) and origin.get('kind') == 'visible_ocr' and origin.get('sha256') == asr_cache.digest(reference):
+            whisper = work_dir / 'subtitles.whisper.srt'
+            return whisper if whisper.is_file() else None
+    except (OSError, ValueError):
+        pass
+    try:
+        metadata = json.loads((work_dir / 'asr-metadata.json').read_text(encoding='utf-8'))
+        if isinstance(metadata, dict) and metadata.get('engine') in {'faster-whisper', 'whisper', 'whisper.cpp', 'stable-ts'}:
+            return reference
+    except (OSError, ValueError):
+        pass
+    for name in ('subtitles.source.provisional.srt', 'subtitles.source.verified.srt'):
+        native = work_dir / name
+        if native.is_file() and asr_cache.digest(native) == asr_cache.digest(reference):
+            return None
+    return reference
 
 
 def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=None) -> Path | None:
@@ -57,7 +82,8 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
     step = max(1, round(fps / 10))
     width, height = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)), int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
     try:
-        references = (source.parent / 'subtitles.source.srt').read_text(encoding='utf-8-sig')
+        reference = _caption_reference(source.parent)
+        references = reference.read_text(encoding='utf-8-sig') if reference else ''
     except OSError:
         references = ''
     try:
@@ -72,6 +98,7 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
 
     frame_results = {}
     fresh_frames = set()
+    fallback_frames = set()
     last_signature = None
     last_result = ('', 0.)
     last_ocr_frame = -count
@@ -81,6 +108,7 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
     ocr_calls = 0
     reused_frames = 0
     recognition_only_calls = 0
+    fallback_calls = 0
     masks_seconds = 0.0
     ocr_seconds = 0.0
     frame_cache = FrameCache(capture)
@@ -94,7 +122,7 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
             ocr_seconds += time.perf_counter() - before
 
     def read_text(frame, index, boundary_labels=None):
-        nonlocal last_signature, last_result, last_ocr_frame, ocr_calls, reused_frames, last_box, last_white_points, last_dark_points, recognition_only_calls, masks_seconds, ocr_seconds
+        nonlocal last_signature, last_result, last_ocr_frame, ocr_calls, reused_frames, last_box, last_white_points, last_dark_points, recognition_only_calls, fallback_calls, masks_seconds, ocr_seconds
         if cancelled is not None and cancelled.is_set():
             raise RuntimeError('Visible subtitle scan cancelled')
         if index in frame_results:
@@ -173,6 +201,15 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
         lines = [(x1, y1-padding, x2, y2-padding, text, confidence)
                  for x1, y1, x2, y2, text, confidence in lines
                  if y2 > padding and y1 < padding + stack.shape[0] * scale]
+        if language == 'ch' and not lines and has_caption_strokes(signature):
+            fallback_calls += 1
+            recovered = timed_ocr(read_caption_fallback, reader, stack)
+            if recovered:
+                # Convert original-pixel coordinates into the same coordinate
+                # system as the primary detector before selecting a band.
+                lines = [(x1*scale, y1*scale, x2*scale, y2*scale, text, confidence)
+                         for x1, y1, x2, y2, text, confidence in recovered]
+                fallback_frames.add(index)
         offsets, cursor = [], 0
         for crop in crops:
             offsets.append((cursor * scale, (cursor + crop.shape[0]) * scale))
@@ -324,6 +361,7 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
             'regions': [{'top': top / height, 'bottom': bottom / height} for top, bottom in regions],
             'frame_rate': fps, 'sample_rate': fps / step,
             'performance': {'ocr_calls': ocr_calls, 'reused_frames': reused_frames,
+                            'fallback_calls': fallback_calls,
                             'recognition_only_calls': recognition_only_calls,
                             'scan_seconds': round(time.perf_counter() - started, 3),
                             'frame_processing_engine': 'cpp' if native_library() is not None else 'python',
@@ -337,7 +375,8 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
             'cues': [
                 {'start': timestamps[boundaries[i]], 'end': timestamps[endings[i]], 'text': text,
                  'confidence': round(sum(row[2] for row in observations[i]) / len(observations[i]), 4),
-                 'needs_review': sum(row[2] for row in observations[i]) / len(observations[i]) < .85
+                 'needs_review': any(row[0] in fallback_frames for row in groups[i])
+                    or sum(row[2] for row in observations[i]) / len(observations[i]) < .85
                     or Counter(text_key(row[1]) for row in observations[i]).most_common(1)[0][1] / len(observations[i]) < .65}
                 for i, text in enumerate(representatives)
                 if text and timestamps[endings[i]] - timestamps[boundaries[i]] >= minimum_duration
@@ -390,8 +429,8 @@ async def visible_source_subtitles(work_dir: Path, on_progress: Callable[[str], 
                    'version': ALGORITHM_VERSION, 'language': recognition_language(work_dir),
                    'uncertain_caption_review': settings.translation_engine.lower() == 'gemini_web',
                    'engines': [asr_cache.package_version('rapidocr'), asr_cache.package_version('vietocr')]}
-    reference = work_dir / 'subtitles.source.srt'
-    fingerprint['reference'] = await asyncio.to_thread(asr_cache.digest, reference) if reference.is_file() else ''
+    reference = await asyncio.to_thread(_caption_reference, work_dir)
+    fingerprint['reference'] = await asyncio.to_thread(asr_cache.digest, reference) if reference else ''
     marker = work_dir / 'subtitles.visible-scan.json'
 
     def cached():
@@ -417,15 +456,19 @@ async def visible_source_subtitles(work_dir: Path, on_progress: Callable[[str], 
         # Cross-job reuse is based on full video content, language and ASR
         # reference, not a filename that might refer to another movie.
         def directory():
+            video_digest = asr_cache.digest(source)
             key = hashlib.sha256(json.dumps({
-                'video': asr_cache.digest(source), 'version': ALGORITHM_VERSION,
+                'video': video_digest, 'version': ALGORITHM_VERSION,
                 'language': fingerprint['language'], 'reference': fingerprint['reference'],
                 'uncertain_caption_review': fingerprint['uncertain_caption_review'],
                 'engines': fingerprint['engines'],
             }, sort_keys=True).encode()).hexdigest()
-            return Path(settings.storage_dir) / 'recognition-cache' / 'visible' / key
+            return Path(settings.storage_dir) / 'recognition-cache' / 'visible' / key, video_digest
 
-        shared = await asyncio.to_thread(directory)
+        shared, video_digest = await asyncio.to_thread(directory)
+        if output.is_file() and (work_dir / 'subtitles.vision-review.json').is_file():
+            from app.services.subtitles.caption_cache import preserve_legacy_decisions
+            await asyncio.to_thread(preserve_legacy_decisions, source, output, work_dir, video_digest)
         artifacts = {'visible.srt': output, 'recognition.json': work_dir / 'subtitles.recognition.json'}
         async with asr_cache.lock(shared):
             if await asyncio.to_thread(asr_cache.restore_artifacts, shared, artifacts):

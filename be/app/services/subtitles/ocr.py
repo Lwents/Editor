@@ -154,6 +154,96 @@ def read_known_band(reader, image):
     return unicodedata.normalize('NFC', result.txts[0].strip()), float(result.scores[0])
 
 
+def read_known_bands(reader, images):
+    """Recognize a bounded set of already cropped lines in one native batch."""
+    with _inference_lock:
+        result = reader.recognize_txt(images)
+    if (result.txts is None or result.scores is None
+            or len(result.txts) != len(images) or len(result.scores) != len(images)):
+        raise ValueError('Incomplete caption recognition batch')
+    return [(unicodedata.normalize('NFC', text.strip()), float(score))
+            for text, score in zip(result.txts, result.scores)]
+
+
+def has_caption_strokes(signature) -> bool:
+    """A cheap gate for a second reading, not proof that pixels are subtitles."""
+    import cv2
+    height, width = signature.shape[:2]
+    _, _, stats, centers = cv2.connectedComponentsWithStats(signature)
+    glyphs = []
+    for (x, y, w, h, area), (cx, cy) in zip(stats[1:], centers[1:]):
+        if (max(6, height * .06) <= h <= height * .85 and 2 <= w <= width * .14
+                and 10 <= area < w * h * .75 and .15 * width <= cx <= .85 * width):
+            glyphs.append((cx, cy, h))
+    # Requiring several aligned strokes rejects a single bright patch in the
+    # background. OCR still has to independently return a real Chinese line.
+    for _, cy, h in glyphs:
+        row = [g for g in glyphs if abs(g[1] - cy) <= max(h, g[2]) * .6]
+        if len(row) >= 3 and max(g[0] for g in row) - min(g[0] for g in row) >= width * .08:
+            return True
+    return False
+
+
+@lru_cache(maxsize=2)
+def _optional_server_reader(model_path: str, modified_ns: int):
+    try:
+        return get_reader('ch', accurate=True)
+    except Exception as exc:
+        # This enhancement is optional; an unavailable model must not discard
+        # the Mobile reading or make a subtitle job fail. Cache this failure
+        # until the model changes, avoiding repeated failed model loads.
+        print(f'[OCR] Optional caption recognizer unavailable: {type(exc).__name__}', flush=True)
+        return None
+
+
+def read_caption_fallback(reader, image):
+    """Recover a missed CJK line from original pixels; keep it provisional.
+
+    Padding/downscaling can hide calligraphic captions from detection. Only
+    callers with an independently located caption band may use this function.
+    No dictionary or expected subtitle is supplied to the recognizer.
+    """
+    import cv2
+    gray = cv2.cvtColor(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), cv2.COLOR_GRAY2BGR)
+    lines = read_lines(reader, gray, minimum=.80, caption_region=True)
+    lines = [line for line in lines if re.search(r'[\u3400-\u9fff]', line[4])
+             and 2 <= len(text_key(line[4])) <= 60]
+    if not lines:
+        return []
+    accurate = None
+    # Reuse an installed Server recognizer only for tightly detected lines;
+    # do not download a model or run a second detector in the middle of a job.
+    model = BACKEND_DIR / 'models' / 'ocr' / 'ch_PP-OCRv5_rec_server.onnx'
+    if model.is_file():
+        accurate = _optional_server_reader(str(model), model.stat().st_mtime_ns)
+    result = []
+    for x1, y1, x2, y2, text, score in lines:
+        if accurate is not None:
+            crop = gray[max(0, int(y1)-3):min(gray.shape[0], int(y2)+3),
+                        max(0, int(x1)-3):min(gray.shape[1], int(x2)+3)]
+            if crop.size:
+                try:
+                    # A white calligraphic caption over moving clothes can
+                    # confuse 王/主/手. Remove its background for one extra
+                    # tightly cropped recognition pass, without generating
+                    # letters or supplying an expected dictionary phrase.
+                    monochrome = cv2.threshold(crop, 180, 255, cv2.THRESH_BINARY)[1]
+                    readings = read_known_bands(accurate, [crop, monochrome])
+                    candidate, probability = max(readings, key=lambda row: row[1])
+                except Exception:
+                    result.append((x1, y1, x2, y2, text, score))
+                    continue
+                # A shorter crop must not erase the tail of the detected line.
+                # A confident, complete reading of these pixels may replace
+                # an uncertain first reading; the report still requires review.
+                if (probability >= .90 and probability > score
+                        and len(text_key(candidate)) >= len(text_key(text))
+                        and re.fullmatch(r'[\u3400-\u9fff\s，。！？、：；,.!?]+', candidate)):
+                    text, score = candidate, probability
+        result.append((x1, y1, x2, y2, text, score))
+    return result
+
+
 def discover_regions(capture, reader, count: int, width: int, height: int, references: str):
     """Find changing text bands anywhere on screen; exclude persistent logos."""
     import cv2

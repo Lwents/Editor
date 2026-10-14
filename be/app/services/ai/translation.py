@@ -43,13 +43,14 @@ class TranslationBatchStructureError(TranslationError):
         self.updates = updates or {}
 
 
-TRANSLATION_POLICY_VERSION = 23
+TRANSLATION_POLICY_VERSION = 24
 
 
 def get_translation_profile(processing_mode=None):
     profile = get_processing_profile(processing_mode)
     if settings.translation_engine.lower() == 'gemini_web':
-        return replace(profile, translation_batch_items=min(profile.translation_batch_items, 8 if profile.name == 'quality' else 12))
+        limit = 24 if profile.name == 'fast' else 8 if profile.name == 'quality' else 12
+        return replace(profile, translation_batch_items=min(profile.translation_batch_items, limit))
     return profile
 
 
@@ -609,11 +610,12 @@ async def _translate_gemini_batch(
             'Dịch current_items sang tiếng Việt tự nhiên, ngắn gọn để làm phụ đề. '
             'Chỉ trả JSON {"items":[{"id":1,"text":"bản dịch"}],"memory_updates":{}}. '
             'Giữ đủ ID, không gộp/tách/bỏ câu; dịch cả cảm thán. Không giải thích. '
-            'Câu nguồn là căn cứ cuối cùng: giữ chủ thể, đối tượng, phủ định, nguyên nhân, '
-            'thành ngữ và sắc thái; không thêm tình tiết hay danh tính người nói. '
+            'Dịch thành ngữ theo nghĩa trong cảnh, không ghép nghĩa từng chữ. '
+            'Giữ chủ thể, đối tượng, phủ định, nguyên nhân và sắc thái; không thêm tình tiết hay danh tính người nói. '
             'Đọc các mảnh câu liên tiếp cùng previous_context/next_context để nối nghĩa; chỉ dịch current_items. '
             'Giữ tên đầy đủ/biệt danh theo character_name_contract, tước vị và NPC; không đổi vai vế thành tên. '
             'Tuân thủ addressing_contract, không dùng chàng/thiếp khi bị cấm. '
+            '他/她 theo thái độ người nói; không mặc định kính ngữ người khi đang oán trách kẻ hại mình. '
             'Tên được gọi không xác định người nói; hồ sơ/memory không được ghi đè bằng chứng nguồn. '
             'Không để sót chữ Trung hoặc pinyin; ký tự Latin/tên chưa rõ giữ nguyên. '
             'memory_updates chỉ ghi thay đổi mới có bằng chứng, còn lại để trống. '

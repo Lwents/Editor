@@ -21,6 +21,38 @@ from app.services.subtitles.vision_review import VERSION as VISION_REVIEW_VERSIO
 
 
 class VisibleCaptionTests(unittest.TestCase):
+    def test_ocr_copy_is_not_reported_as_an_independent_speech_match(self):
+        from app.services.subtitles.quality import recognition_report
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'subtitles.recognition.json').write_text(json.dumps({'cues': [
+                {'start': 0, 'end': 1, 'text': '你好朋友'}]}))
+            text = '1\n00:00:00,000 --> 00:00:01,000\n你好朋友\n'
+            (root / 'subtitles.source.srt').write_text(text, encoding='utf-8')
+            report = recognition_report(root)
+            self.assertFalse(report['speech_assessed'])
+            self.assertNotIn('speech_agreement', report['cues'][0])
+            (root / 'asr-metadata.json').write_text(json.dumps({'engine': 'faster-whisper'}))
+            report = recognition_report(root)
+            self.assertTrue(report['speech_assessed'])
+            self.assertEqual(report['cues'][0]['speech_agreement'], 1)
+
+    def test_generated_native_source_does_not_invalidate_ocr_cache_on_retry(self):
+        from app.services.subtitles.visible import _caption_reference
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'subtitles.source.srt'
+            source.write_text('native subtitle', encoding='utf-8')
+            (root / 'subtitles.source.provisional.srt').write_text('native subtitle', encoding='utf-8')
+            self.assertIsNone(_caption_reference(root))
+            (root / 'asr-metadata.json').write_text(json.dumps({'engine': 'faster-whisper'}))
+            self.assertEqual(_caption_reference(root), source)
+            (root / 'subtitles.source.origin.json').write_text(json.dumps({'kind': 'visible_ocr', 'sha256': digest(source)}))
+            self.assertIsNone(_caption_reference(root))
+            whisper = root / 'subtitles.whisper.srt'
+            whisper.write_text('actual speech', encoding='utf-8')
+            self.assertEqual(_caption_reference(root), whisper)
+
     def test_high_confidence_single_character_still_checks_caption_presence(self):
         events = [SubtitleEvent(1, 2, '井')]
         report = {'cues': [{'start': 1, 'end': 2, 'confidence': .999, 'needs_review': False}]}
@@ -208,6 +240,13 @@ class VisibleCaptionTests(unittest.TestCase):
 
 
 class ContextRetryTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        storage = patch.object(settings, 'storage_dir', str(Path(directory.name) / 'storage'))
+        storage.start()
+        self.addCleanup(storage.stop)
+
     async def test_explicit_text_only_retains_ocr_and_does_not_cache_it_as_verified(self):
         from app.services.subtitles.mode import text_only_gemini
         token = text_only_gemini.set(True)

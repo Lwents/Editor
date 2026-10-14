@@ -321,6 +321,10 @@ async def _prepare_target_subtitles_impl(
     source_file = work_dir / "subtitles.source.srt"
     if not source_file.is_file():
         write_srt(raw_events, source_file)
+        if visible_file:
+            from app.services.ai.asr_cache import digest
+            (work_dir / 'subtitles.source.origin.json').write_text(
+                json.dumps({'kind': 'visible_ocr', 'sha256': digest(source_file)}), encoding='utf-8')
     # Keep each displayed caption separate. Grouping and redistributing a long
     # ASR segment invents timings and fills silent, caption-free scenes.
     events = raw_events if visible_file else group_subtitle_events(

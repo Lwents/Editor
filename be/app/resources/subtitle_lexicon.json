@@ -1,42 +1,61 @@
 {
-  "version": 1,
+  "version": 2,
   "provenance": "Original editorial sense notes, not certified HSK/IELTS training data.",
   "entries": [
     {
       "language": "zh",
       "source": "得寸进尺",
       "vi": "lấn tới; được đằng chân lân đằng đầu",
-      "usage": "Hành vi ngày càng đòi hỏi quá mức; không liên quan đến tiền bạc."
+      "usage": "Hành vi ngày càng đòi hỏi quá mức; không liên quan đến tiền bạc.",
+      "aliases": [
+        "得寸進尺"
+      ]
     },
     {
       "language": "zh",
       "source": "心甘情愿",
       "vi": "cam tâm tình nguyện; tự nguyện",
-      "usage": "Sẵn lòng làm việc gì, không đảo trật tự thành tâm cam."
+      "usage": "Sẵn lòng làm việc gì, không đảo trật tự thành tâm cam.",
+      "aliases": [
+        "心甘情願"
+      ]
     },
     {
       "language": "zh",
       "source": "百废待兴",
       "vi": "trăm việc đang chờ khôi phục",
-      "usage": "Nhiều việc cần vực dậy sau biến động, không chỉ cảnh ngổn ngang."
+      "usage": "Nhiều việc cần vực dậy sau biến động, không chỉ cảnh ngổn ngang.",
+      "aliases": [
+        "百廢待興"
+      ]
     },
     {
       "language": "zh",
       "source": "垫脚石",
       "vi": "bàn đạp",
-      "usage": "Có thể là vật kê chân hoặc người bị lợi dụng để tiến thân; chọn theo cảnh."
+      "usage": "Có thể là vật kê chân hoặc người bị lợi dụng để tiến thân; chọn theo cảnh.",
+      "aliases": [
+        "垫腳石",
+        "墊腳石"
+      ]
     },
     {
       "language": "zh",
       "source": "老实点",
       "vi": "ngoan ngoãn chút; yên nào",
-      "usage": "Mệnh lệnh yêu cầu đừng quậy; khi hỏi lời khai mới xét nghĩa thành thật."
+      "usage": "Mệnh lệnh yêu cầu đừng quậy; khi hỏi lời khai mới xét nghĩa thành thật.",
+      "aliases": [
+        "老實點"
+      ]
     },
     {
       "language": "zh",
       "source": "迷了心窍",
       "vi": "mê muội đầu óc",
-      "usage": "Mất sáng suốt vì bị một điều mê hoặc."
+      "usage": "Mất sáng suốt vì bị một điều mê hoặc.",
+      "aliases": [
+        "迷了心竅"
+      ]
     },
     {
       "language": "zh",
@@ -54,31 +73,46 @@
       "language": "zh",
       "source": "领二十军棍",
       "vi": "chịu hai mươi quân côn",
-      "usage": "领 ở đây là nhận hình phạt; giữ số lượng và người chịu phạt."
+      "usage": "领 ở đây là nhận hình phạt; giữ số lượng và người chịu phạt.",
+      "aliases": [
+        "領二十軍棍"
+      ]
     },
     {
       "language": "zh",
       "source": "摄政王",
       "vi": "Nhiếp chính vương",
-      "usage": "Tước vị, không thay bằng tên riêng hay suy ra người đang nói."
+      "usage": "Tước vị, không thay bằng tên riêng hay suy ra người đang nói.",
+      "aliases": [
+        "攝政王"
+      ]
     },
     {
       "language": "zh",
       "source": "太医院",
       "vi": "Thái y viện",
-      "usage": "Cơ quan y tế cung đình, không phải món ăn."
+      "usage": "Cơ quan y tế cung đình, không phải món ăn.",
+      "aliases": [
+        "太醫院"
+      ]
     },
     {
       "language": "zh",
       "source": "药膳",
       "vi": "dược thiện; món ăn bồi bổ",
-      "usage": "Thức ăn dùng nguyên liệu hỗ trợ sức khỏe; không mặc định là thuốc sắc."
+      "usage": "Thức ăn dùng nguyên liệu hỗ trợ sức khỏe; không mặc định là thuốc sắc.",
+      "aliases": [
+        "藥膳"
+      ]
     },
     {
       "language": "zh",
       "source": "启禀",
       "vi": "bẩm; khải bẩm",
-      "usage": "Lời thưa của người dưới với người trên; không viết khởi bẩm."
+      "usage": "Lời thưa của người dưới với người trên; không viết khởi bẩm.",
+      "aliases": [
+        "啟稟"
+      ]
     },
     {
       "language": "zh",
@@ -90,7 +124,10 @@
       "language": "zh",
       "source": "谋杀亲夫",
       "vi": "mưu sát phu quân",
-      "usage": "Có thể là lời trêu một phía; không xác nhận hai người chấp nhận quan hệ vợ chồng."
+      "usage": "Có thể là lời trêu một phía; không xác nhận hai người chấp nhận quan hệ vợ chồng.",
+      "aliases": [
+        "謀殺親夫"
+      ]
     },
     {
       "language": "zh",
@@ -108,19 +145,28 @@
       "language": "zh",
       "source": "理所当然",
       "vi": "đương nhiên; lẽ đương nhiên",
-      "usage": "Có thể mang thái độ tự cho mình có quyền; giữ sắc thái phê phán trong cảnh."
+      "usage": "Có thể mang thái độ tự cho mình có quyền; giữ sắc thái phê phán trong cảnh.",
+      "aliases": [
+        "理所當然"
+      ]
     },
     {
       "language": "zh",
       "source": "不以为然",
       "vi": "không tán thành; không cho là đúng",
-      "usage": "Khác 不以为意 là không để tâm."
+      "usage": "Khác 不以为意 là không để tâm.",
+      "aliases": [
+        "不以為然"
+      ]
     },
     {
       "language": "zh",
       "source": "不以为意",
       "vi": "không để tâm",
-      "usage": "Không tự đổi sang nghĩa phản đối hay không tán thành."
+      "usage": "Không tự đổi sang nghĩa phản đối hay không tán thành.",
+      "aliases": [
+        "不以為意"
+      ]
     },
     {
       "language": "zh",
@@ -217,6 +263,15 @@
       "source": "account for",
       "vi": "giải thích; chiếm; chịu trách nhiệm",
       "usage": "Chọn theo cấu trúc giải thích nguyên nhân, tỷ lệ hoặc trách nhiệm."
+    },
+    {
+      "language": "zh",
+      "source": "喂你个锤锤",
+      "vi": "đút cái con khỉ!",
+      "usage": "Lời phản bác bực bội, thường là độc thoại hài khi bị bắt đút thuốc; 锤锤 ở đây là lời chửi giảm nhẹ, không phải hành động đút một cái búa. Giữ mức độ của lời nguồn.",
+      "aliases": [
+        "喂你個錘錘"
+      ]
     }
   ]
 }

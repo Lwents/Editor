@@ -18,10 +18,23 @@ def recognition_report(work_dir: Path) -> dict:
     except (OSError, ValueError):
         return {'assessed': False, 'cues': [], 'review_count': 0,
                 'message': 'Chưa có đánh giá OCR; phụ đề có thể đang dùng mốc lời thoại.'}
+    speech = []
     try:
-        speech = parse_srt(work_dir / 'subtitles.source.srt')
-    except OSError:
-        speech = []
+        metadata = json.loads((work_dir / 'asr-metadata.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        metadata = {}
+    speech_known = ((isinstance(metadata, dict) and metadata.get('engine') in
+                     {'faster-whisper', 'whisper', 'whisper.cpp', 'stable-ts'})
+                    or (work_dir / 'subtitles.whisper.srt').is_file())
+    if speech_known:
+        from app.services.subtitles.visible import _caption_reference
+        reference = _caption_reference(work_dir)
+        if reference:
+            try:
+                speech = parse_srt(reference)
+            except OSError:
+                pass
+    report['speech_assessed'] = bool(speech)
     for cue in report.get('cues', []):
         nearby = [e for e in speech if e.start < cue['end'] + .15 and e.end > cue['start'] - .15]
         recognized = text_key(' '.join(e.text for e in nearby))

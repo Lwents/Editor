@@ -16,12 +16,16 @@ No corpus below has been certified as HSK 9 or IELTS 9 bilingual training data.
 
 ## Implementation
 
-`app/resources/subtitle_lexicon.json` contains 36 **original editorial sense
+`app/resources/subtitle_lexicon.json` contains 37 **original editorial sense
 notes**, including historical drama terms and ambiguous English phrases. They
 are not copied from or labeled as an official HSK/IELTS dictionary. Runtime
 retrieval sends only source-matching notes (8 for fast, 16 otherwise; 3,200
 character cap). Notes are conditional, not mandatory substitutions; names,
 address forms and actual source evidence take precedence.
+Explicit simplified/traditional variants retrieve the same sense. A later
+full-video test caught a literal translation of `喂你个锤锤` in fast mode; an
+original colloquial sense note now covers that phrase. Translation policy 24
+and lexicon version 2 invalidate earlier translation results when reprocessing.
 
 Research downloads remain outside the release in `.runtime/language-research`.
 The HSK source is pinned to commit
@@ -51,3 +55,25 @@ Successful context can be reused across jobs only under the same content key:
 complete transcript/timing, image video digest (or text-only mode), verified
 caption evidence, context policy, engine and model. Artifact hashes are
 verified; failed or empty context is not published as a reusable result.
+
+Caption decisions can also be reused independently of their batch IDs. Keys
+include the complete video digest, exact cue times, raw OCR text and caption
+regions. Only confirmed image/local readings are stored; provisional text,
+gap proofs and narrative context are not transferred. When OCR is refreshed,
+an old checkpoint must verify its original content fingerprint before its
+confirmed decisions can be preserved.
+
+OCR algorithm 16 conditionally retries an empty detection at original pixel
+resolution. A stroke gate rejects empty/solid bright regions. An installed
+Server recognizer reads tight normal/monochrome crops in a two-image batch;
+no model download or expected transcript is supplied. These recovered cues
+still require review. A failed optional model retains the Mobile reading.
+
+Native-generated source text is not fed back as a new ASR reference on retry,
+which avoids an unnecessary OCR rescan. Speech agreement is reported only
+when a separate ASR transcript exists, never by comparing OCR with its copy.
+
+Fast mode caps Gemini Web batches at 24 (balanced 12, quality 8). One actual
+24-cue experiment took 24.53 seconds using two 12-cue requests and 14.13 seconds
+using one 24-cue request. This is a small latency observation, not a universal
+speed multiplier or accuracy equivalence claim.

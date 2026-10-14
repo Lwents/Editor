@@ -4,6 +4,11 @@ from app.services.ai.lexical_guidance import lexical_guidance
 
 
 class LexicalGuidanceTests(unittest.TestCase):
+    def test_traditional_glyphs_and_colloquial_idioms_get_matching_senses(self):
+        notes = lexical_guidance(['穩固皇權的垫腳石', '喂你个锤锤'], 'vi')
+        self.assertTrue(any(row['source'] == '垫腳石' and row['vi'] == 'bàn đạp' for row in notes))
+        self.assertTrue(any('con khỉ' in row['vi'] for row in notes))
+
     def test_distinguishes_similar_chinese_idioms(self):
         notes = lexical_guidance(['他不以为然，却不以为意。'], 'vi')
         by_source = {row['source']: row for row in notes}

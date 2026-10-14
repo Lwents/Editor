@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-15",
+  "translation_policy": 24,
+  "ocr_algorithm": 16,
+  "lexicon_version": 2,
+  "video": "6.mp4",
+  "reference_injected": false,
+  "scope": "Local native OCR plus Gemini Web text translation; does not include ASR, rendering or an independent T-reference accuracy score.",
+  "raw_cues_before": 69,
+  "raw_cues_after": 70,
+  "added_cue": [
+    {
+      "start": 117.267,
+      "end": 118.4,
+      "text": "王爷多心了"
+    }
+  ],
+  "native_ocr_seconds": 290.27,
+  "native_performance": {
+    "ocr_calls": 1264,
+    "reused_frames": 460,
+    "fallback_calls": 51,
+    "recognition_only_calls": 842,
+    "scan_seconds": 289.963,
+    "frame_processing_engine": "cpp",
+    "mask_seconds": 7.687,
+    "ocr_seconds": 226.9,
+    "refinement_decode_seconds": 17.777,
+    "frame_cache_hits": 0,
+    "refinement_frame_reads": 593,
+    "refinement_seeks": 106,
+    "frame_cache_budget_bytes": 33554432
+  },
+  "mode": "fast",
+  "continuation_from_cached_ocr_context_seconds": 47.38,
+  "translated_cues": 68,
+  "empty_cues": 0,
+  "image_unverified_cues": 16,
+  "preserved_real_caption_decisions": 15
+}

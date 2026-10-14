@@ -434,6 +434,13 @@ async def review_visible_captions(source: Path, events, work_dir: Path, progress
         except (ValueError, TypeError, RuntimeError, KeyError):
             items = []; context = {}
     pending_ids = [i for i in ids if i not in {item['id'] for item in items}]
+    from app.services.subtitles.caption_cache import restore_decisions, save_decisions
+    await asyncio.to_thread(save_decisions, video_digest, events, items, report.get('regions'))
+    reused = await asyncio.to_thread(restore_decisions, video_digest, events, pending_ids, report.get('regions'))
+    if reused:
+        items.extend(reused)
+        progress(f'Dùng lại {len(reused)} kết quả đối chiếu chữ đã có bằng chứng', 66)
+        pending_ids = [i for i in ids if i not in {item['id'] for item in items}]
     if pending_ids and report.get('language_model') == 'ch':
         progress(f'OCR đọc lại chữ ở ba kích thước ảnh ({len(items)}/{len(ids)} đoạn)', 66)
         items.extend(await asyncio.to_thread(_local_consensus, source, events, pending_ids, report.get('regions'), items))
@@ -441,6 +448,7 @@ async def review_visible_captions(source: Path, events, work_dir: Path, progress
     pending_ids = [i for i in ids if i not in {item['id'] for item in items}]
     # Persist local decisions too, even if the following Gemini request fails.
     if items:
+        await asyncio.to_thread(save_decisions, video_digest, events, items, report.get('regions'))
         pending = cache.with_suffix('.pending.json')
         pending.write_text(json.dumps({'fingerprint': fingerprint, 'items': items, 'context': context}, ensure_ascii=False, indent=2), encoding='utf-8'); pending.replace(cache)
     for start in range(0, 0 if text_only else len(pending_ids), IMAGE_BATCH_SIZE):
@@ -489,6 +497,7 @@ async def review_visible_captions(source: Path, events, work_dir: Path, progress
             if isinstance(memory.get('addressing_rules'), list): context['honorific_rules'] = context.get('honorific_rules', []) + memory['addressing_rules']
         pending = cache.with_suffix('.pending.json')
         pending.write_text(json.dumps({'fingerprint': fingerprint, 'items': items, 'context': context}, ensure_ascii=False, indent=2), encoding='utf-8'); pending.replace(cache)
+        await asyncio.to_thread(save_decisions, video_digest, events, items, report.get('regions'))
     if report.get('language_model') == 'ch':
         items = await asyncio.to_thread(_verify_caption_gaps, source, events, items, report.get('regions'))
         pending = cache.with_suffix('.pending.json')

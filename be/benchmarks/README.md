@@ -2,6 +2,11 @@
 
 Historical recognition benchmark reports are stored in `results/`.
 
+Language resources and their limits are documented in [LANGUAGE_RESOURCES.md](LANGUAGE_RESOURCES.md).
+The focused OCR recovery/fast translation result is recorded in
+[results/caption-recovery.json](results/caption-recovery.json); it is not a
+whole-episode accuracy certification.
+
 ## Native frame performance
 
 Build the C++ mask/comparison library with `python scripts/desktop/build-native.py`
