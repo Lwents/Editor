@@ -36,6 +36,8 @@ jobs:
         run: |
           & "$env:GITHUB_WORKSPACE\scripts\desktop\prepare-frontend.ps1" -BuildRoot "$env:RUNNER_TEMP\EditorCI"
           & "$env:GITHUB_WORKSPACE\scripts\desktop\stage-frontend.ps1" -BuildRoot "$env:RUNNER_TEMP\EditorCI"
+          node "$env:GITHUB_WORKSPACE\scripts\desktop\tests\proxy-retry.test.cjs" "$env:RUNNER_TEMP\EditorCI\fe\apps\web\node_modules\typescript"
+          if($LASTEXITCODE -ne 0){throw 'Retry bridge checks failed'}
           # Robocopy success codes are 0 through 7; scripts already reject 8+.
           $global:LASTEXITCODE=0
           $Frontend="$env:RUNNER_TEMP\EditorCI\app\resources\bundle\frontend\apps\web"
@@ -52,6 +54,14 @@ jobs:
       - name: Package update without AI models
         shell: pwsh
         run: |
+          python scripts/desktop/build-native.py
+          if($LASTEXITCODE -ne 0){throw 'Native frame kernel build failed'}
+          python -m pip install numpy opencv-python-headless
+          if($LASTEXITCODE -ne 0){throw 'Native test dependencies failed'}
+          Push-Location be
+          python -m unittest tests.test_native_frames
+          Pop-Location
+          if($LASTEXITCODE -ne 0){throw 'Native frame parity checks failed'}
           $Payload="$env:RUNNER_TEMP\EditorCI\app"
           New-Item -ItemType Directory -Force "$Payload\resources\app","$Payload\resources\bundle\backend\app" | Out-Null
           Copy-Item scripts/desktop/* "$Payload\resources\app" -Recurse -Force

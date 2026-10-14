@@ -1,5 +1,28 @@
 # Subtitle reference benchmark
 
+## Native frame performance
+
+Build the C++ mask/comparison library with `python scripts/desktop/build-native.py`
+from the repository root. It uses MSVC on Windows (development-only Zig is an
+alternative) and a C++ compiler on Linux. The app needs neither compiler nor a
+new OpenCV SDK. Release builds compile and test the library automatically.
+
+Run `python be/benchmarks/benchmark_frame_processing.py original.mp4
+--output benchmark-results --start 45 --seconds 12` to compare masks on 30 real
+frames and OCR output on the same short clip. `results.json` reports stage
+timings and asserts identical subtitle text/timecodes. Masks must also match
+the reference at thresholds, image edges and strided slices.
+
+The native kernels fuse colour/brightness filtering and glyph-mask comparison;
+OpenCV still decodes the video and ONNX Runtime still runs the OCR model.
+Frame refinement uses a 32 MiB cache and avoids seeking when the next frame is
+already at the decoder cursor. It does not lower the scan rate or remove
+caption boundary verification. A kernel speedup is not an end-to-end translation
+speedup; model warmup, inference and Gemini waits must be measured separately.
+`subtitles.recognition.json` records OCR/mask/refinement timings; each job's
+`stage-performance.json` records OCR, image verification, context, translation
+and final review timings, including failed attempts.
+
 `run_translation_benchmark.py` translates numbered original videos using the
 production OCR → image verification → context → translation → review pipeline.
 Uncertain Chinese captions first receive three local OCR reads of the actual

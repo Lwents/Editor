@@ -383,11 +383,12 @@ export function TranslationView() {
 			setError("");
 		} catch (e) {
 			setError(e instanceof Error ? e.message : "Không thể tiếp tục dịch.");
+			return;
 		} finally {
-			// The job ID stays the same, so explicitly restart polling after retry.
-			setPollRevision((revision) => revision + 1);
 			setBusy(false);
 		}
+		// Only restart polling after success; a failed POST must remain visible.
+		setPollRevision((revision) => revision + 1);
 	}
 	async function startTranslation() {
 		const asset = media.find(

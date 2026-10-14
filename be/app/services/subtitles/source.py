@@ -16,6 +16,7 @@ from app.services.media.ffmpeg import find_ffmpeg
 from app.services.subtitles.ass import write_srt
 from app.services.subtitles.timing import group_subtitle_events, parse_srt, split_long_subtitle_events
 from app.services.subtitles.visible import ALGORITHM_VERSION, visible_source_subtitles
+from app.services.subtitles.performance import measure_stage
 
 
 class SubtitleSourceError(RuntimeError):
@@ -299,11 +300,11 @@ async def _prepare_target_subtitles_impl(
     if source_video is not None and subtitle_file.name in {"subtitles.whisper.srt", "subtitles.visible.srt"}:
         progress("Đọc chữ gốc và thời gian hiển thị trên video", max(0, translation_progress_start - 2))
         try:
-            visible_file = await visible_source_subtitles(
+            visible_file = await measure_stage('visible_ocr', visible_source_subtitles(
                 work_dir,
                 on_progress=lambda stage: progress(stage, max(0, translation_progress_start - 2)),
                 on_measurement=on_measurement,
-            )
+            ), work_dir)
         except (ImportError, RuntimeError, OSError):
             visible_file = None
     source_file = work_dir / "subtitles.source.srt"
@@ -312,7 +313,7 @@ async def _prepare_target_subtitles_impl(
     visual_context = {}
     if visible_file and source_video is not None and settings.translation_engine.lower() == 'gemini_web':
         from app.services.subtitles.vision_review import review_visible_captions
-        raw_events, visual_context = await review_visible_captions(source_video, raw_events, work_dir, progress)
+        raw_events, visual_context = await measure_stage('caption_verification', review_visible_captions(source_video, raw_events, work_dir, progress), work_dir)
         write_srt(raw_events, work_dir / 'subtitles.source.verified.srt')
     source_file = work_dir / "subtitles.source.srt"
     if not source_file.is_file():
@@ -342,7 +343,7 @@ async def _prepare_target_subtitles_impl(
     progress("Gemini đọc ngữ cảnh cốt truyện, nhân vật và xưng hô" if settings.translation_engine == 'gemini_web' else "AI nhận diện tên phim, nhân vật và vai vế", max(0, translation_progress_start - 1))
     if on_measurement is not None:
         on_measurement(0, 1)
-    context = await analyze_video_context(source_video, events, work_dir, verified_context=visual_context)
+    context = await measure_stage('context', analyze_video_context(source_video, events, work_dir, verified_context=visual_context), work_dir)
     if on_measurement is not None:
         on_measurement(1, 1)
     context = _merge_context(context, visual_context)
@@ -365,7 +366,7 @@ async def _prepare_target_subtitles_impl(
         if on_measurement is not None:
             on_measurement(completed, total)
 
-    translated_events = await get_translation_engine().translate_events(
+    translated_events = await measure_stage('translation', get_translation_engine().translate_events(
         events,
         source_language,
         target_language,
@@ -373,7 +374,7 @@ async def _prepare_target_subtitles_impl(
         processing_mode=processing_mode,
         checkpoint_file=work_dir / "translation_checkpoint.json",
         on_batch_progress=translation_progress,
-    )
+    ), work_dir)
     from app.services.ai.translation_review import review_translated_events
     def review_progress(completed: int, total: int) -> None:
         percent = translation_progress_percent(completed, total, review_start, translation_progress_end)
@@ -384,9 +385,9 @@ async def _prepare_target_subtitles_impl(
     from app.services.presets import get_processing_profile
     mode = get_processing_profile(processing_mode).name
     if mode != 'fast':
-        translated_events = await review_translated_events(
+        translated_events = await measure_stage('translation_review', review_translated_events(
             events, translated_events, context, work_dir, source_language,
-            target_language, processing_mode, review_progress)
+            target_language, processing_mode, review_progress), work_dir)
     translated_events = split_long_subtitle_events(
         translated_events,
         max_chars=grouped_max_chars,

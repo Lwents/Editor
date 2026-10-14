@@ -22,7 +22,7 @@ async function forward(
 				route === "api/settings/ai/browser/open" ||
 				route === "api/voices/preview" ||
 				route === "api/jobs" ||
-				/^api\/jobs\/[a-zA-Z0-9_-]+\/(cancel|subtitles\/realign)$/.test(route)));
+				/^api\/jobs\/[a-zA-Z0-9_-]+\/(cancel|retry|subtitles\/realign)$/.test(route)));
 	if (!allowed)
 		return Response.json(
 			{ detail: "Đường dẫn không được hỗ trợ." },

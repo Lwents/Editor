@@ -27,6 +27,7 @@ class SubtitleRecoveryTests(unittest.IsolatedAsyncioTestCase):
                      patch.object(settings, 'target_language', 'vi'), \
                      patch.object(source, 'analyze_video_context', AsyncMock(return_value={})), \
                      patch.object(source, 'get_translation_engine', return_value=engine), \
+                     patch('app.services.ai.gemini_web.browser.close', AsyncMock()), \
                      patch('app.services.ai.translation_review.review_translated_events', review):
                     target = await source._prepare_target_subtitles(original, root, 'zh', Mock(), processing_mode=mode)
                     self.assertEqual(review.await_count, 0 if mode == 'fast' else 1)

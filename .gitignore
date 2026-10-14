@@ -45,6 +45,12 @@ integration-logs/
 *.sqlite
 *.sqlite-*
 *.exe
+be/app/native/*.dll
+be/app/native/*.so
+be/app/native/*.obj
+be/app/native/*.lib
+be/app/native/*.exp
+be/app/native/*.pdb
 *.zip
 *.7z
 .DS_Store

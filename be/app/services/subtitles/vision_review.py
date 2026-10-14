@@ -157,6 +157,8 @@ def _verify_caption_gaps(source, events, items, regions):
     verified = {item['id']: dict(item) for item in items}
     cap = cv2.VideoCapture(str(source))
     reader = None
+    from app.services.subtitles.frame_processing import FrameCache
+    frame_cache = FrameCache(cap)
     try:
         fps = cap.get(cv2.CAP_PROP_FPS)
         if not fps or fps <= 0:
@@ -173,8 +175,7 @@ def _verify_caption_gaps(source, events, items, regions):
             target = _caption_key(current['text'])
             matches = []
             for frame_index in range(math.ceil(gap['start'] * fps), math.ceil(gap['end'] * fps)):
-                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
-                ok, frame = cap.read()
+                ok, frame = frame_cache.read_at(frame_index)
                 if not ok:
                     matches.append(False)
                     break

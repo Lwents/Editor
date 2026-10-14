@@ -11,6 +11,8 @@ $Uv=Join-Path $Repo '.runtime\bin\uv.exe'
 if(-not(Test-Path $Uv)){$Uv=(Get-Command uv.exe -ErrorAction Stop).Source}
 $Venv=Join-Path $Repo 'be\.venv-vieneu'
 $Base=(& "$Venv\Scripts\python.exe" -c 'import sys;print(sys.base_prefix)').Trim()
+& "$Venv\Scripts\python.exe" "$Repo\scripts\desktop\build-native.py"
+if($LASTEXITCODE -ne 0){throw 'Native frame kernel build failed'}
 if(-not(Test-Path "$BuildRoot\python\python.exe")){
  CopyTree $Base "$BuildRoot\python"
  CopyTree "$Venv\Lib\site-packages" "$BuildRoot\python\Lib\site-packages"

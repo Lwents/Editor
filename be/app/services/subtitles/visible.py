@@ -19,6 +19,7 @@ from app.services.ai import asr_cache
 from app.services.subtitles.ass import write_srt
 from app.services.subtitles.timing import SubtitleEvent
 from app.services.subtitles.ocr import get_reader, read_lines, read_known_band, discover_regions, recognition_language, text_key
+from app.services.subtitles.frame_processing import caption_masks, compare_masks, native_library, FrameCache
 
 ALGORITHM_VERSION = 15
 
@@ -80,9 +81,20 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
     ocr_calls = 0
     reused_frames = 0
     recognition_only_calls = 0
+    masks_seconds = 0.0
+    ocr_seconds = 0.0
+    frame_cache = FrameCache(capture)
+
+    def timed_ocr(operation, *args, **kwargs):
+        nonlocal ocr_seconds
+        before = time.perf_counter()
+        try:
+            return operation(*args, **kwargs)
+        finally:
+            ocr_seconds += time.perf_counter() - before
 
     def read_text(frame, index, boundary_labels=None):
-        nonlocal last_signature, last_result, last_ocr_frame, ocr_calls, reused_frames, last_box, last_white_points, last_dark_points, recognition_only_calls
+        nonlocal last_signature, last_result, last_ocr_frame, ocr_calls, reused_frames, last_box, last_white_points, last_dark_points, recognition_only_calls, masks_seconds, ocr_seconds
         if cancelled is not None and cancelled.is_set():
             raise RuntimeError('Visible subtitle scan cancelled')
         if index in frame_results:
@@ -97,17 +109,13 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
         # Keep the 10 Hz sampling and force a fresh reading every 0.5 s; any
         # visual change or uncertain reading still invokes the full OCR model.
         gray = cv2.cvtColor(stack, cv2.COLOR_BGR2GRAY)
-        spread = stack.max(axis=2).astype(np.int16) - stack.min(axis=2)
-        white = ((gray >= 190) & (spread <= 65)).astype(np.uint8)
-        dark = cv2.dilate((gray < 135).astype(np.uint8), np.ones((5, 5), np.uint8))
-        signature = white & dark
-        if np.count_nonzero(signature) < 30:
-            # Plain white captions may have no dark outline at all.
-            signature = white
+        mask_started = time.perf_counter()
+        white, signature = caption_masks(stack, gray)
+        masks_seconds += time.perf_counter() - mask_started
         if boundary_labels is not None and last_box is not None and getattr(reader, 'vietnamese', None) is None:
             _, y1, _, y2 = last_box
             recognition_only_calls += 1
-            quick_text, quick_confidence = read_known_band(reader, stack[y1:y2, :])
+            quick_text, quick_confidence = timed_ocr(read_known_band, reader, stack[y1:y2, :])
             matches = [label for label in boundary_labels if label and text_key(label) == text_key(quick_text)]
             if matches and quick_confidence >= .90:
                 result = (matches[0], quick_confidence)
@@ -124,8 +132,7 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
                 previous = last_signature[y1:y2, x1:x2]
             else:
                 current, previous = signature, last_signature
-            changed = np.count_nonzero(current != previous)
-            union = np.count_nonzero(current | previous)
+            changed, union = compare_masks(current, previous)
             same_glyphs = False
             if last_white_points is not None and last_dark_points is not None:
                 # Verify the interiors of known glyphs and their dark strokes.
@@ -141,7 +148,7 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
                 # a mismatch falls back to detection, including other bands.
                 _, y1, _, y2 = last_box
                 recognition_only_calls += 1
-                quick_text, quick_confidence = read_known_band(reader, stack[y1:y2, :])
+                quick_text, quick_confidence = timed_ocr(read_known_band, reader, stack[y1:y2, :])
                 if quick_confidence >= .90 and text_key(quick_text) == text_key(last_result[0]):
                     reused_frames += 1
                     frame_results[index] = last_result
@@ -162,7 +169,7 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
         # Weak CJK font recognition must remain provisional until the actual
         # image is checked. API-only translation retains the stricter threshold.
         minimum = .40 if language == 'ch' and settings.translation_engine.lower() == 'gemini_web' else .60
-        lines = read_lines(reader, detector_input, minimum=minimum, caption_region=True)
+        lines = timed_ocr(read_lines, reader, detector_input, minimum=minimum, caption_region=True)
         lines = [(x1, y1-padding, x2, y2-padding, text, confidence)
                  for x1, y1, x2, y2, text, confidence in lines
                  if y2 > padding and y1 < padding + stack.shape[0] * scale]
@@ -236,6 +243,7 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
             if not ok:
                 break
             remember_timestamp(index)
+            frame_cache.remember(index, frame)
             text, confidence = read_text(frame, index)
             if index % (step * 50) == 0:
                 print(f"[Visible subtitles] Scanning {index / fps:.1f}/{count / fps:.1f}s", flush=True)
@@ -261,8 +269,7 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
                 index = row[0]
                 if index in fresh_frames:
                     continue
-                capture.set(cv2.CAP_PROP_POS_FRAMES, index)
-                ok, frame = capture.read()
+                ok, frame = frame_cache.read_at(index)
                 if not ok:
                     continue
                 frame_results.pop(index, None)
@@ -288,9 +295,8 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
             boundary = after
             last_old_frame = before
             found_new = False
-            capture.set(cv2.CAP_PROP_POS_FRAMES, before + 1)
             for index in range(before + 1, after + 1):
-                ok, frame = capture.read()
+                ok, frame = frame_cache.read_at(index)
                 if not ok:
                     break
                 # Boundary frames require a real reading unless that exact
@@ -319,7 +325,15 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
             'frame_rate': fps, 'sample_rate': fps / step,
             'performance': {'ocr_calls': ocr_calls, 'reused_frames': reused_frames,
                             'recognition_only_calls': recognition_only_calls,
-                            'scan_seconds': round(time.perf_counter() - started, 3)},
+                            'scan_seconds': round(time.perf_counter() - started, 3),
+                            'frame_processing_engine': 'cpp' if native_library() is not None else 'python',
+                            'mask_seconds': round(masks_seconds, 3),
+                            'ocr_seconds': round(ocr_seconds, 3),
+                            'refinement_decode_seconds': round(frame_cache.decode_seconds, 3),
+                            'frame_cache_hits': frame_cache.hits,
+                            'refinement_frame_reads': frame_cache.reads,
+                            'refinement_seeks': frame_cache.seeks,
+                            'frame_cache_budget_bytes': frame_cache.budget},
             'cues': [
                 {'start': timestamps[boundaries[i]], 'end': timestamps[endings[i]], 'text': text,
                  'confidence': round(sum(row[2] for row in observations[i]) / len(observations[i]), 4),
