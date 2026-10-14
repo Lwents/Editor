@@ -89,6 +89,7 @@ export function TranslationView() {
 	const [error, setError] = useState("");
 	const [voice, setVoice] = useState(false);
 	const [processingMode, setProcessingMode] = useState<"fast" | "balanced" | "quality">("balanced");
+	const [verifyImages, setVerifyImages] = useState(false);
 	const [keepMusic, setKeepMusic] = useState(false);
 	const [voiceCatalog, setVoiceCatalog] = useState<VoiceCatalog | null>(null);
 	const [voiceEngine, setVoiceEngine] = useState("vieneu");
@@ -420,6 +421,7 @@ export function TranslationView() {
 					hard_subtitles: true,
 					video_speed: 1,
 					processing_mode: processingMode,
+					text_only_gemini: !verifyImages,
 					bgm_mode: voice && keepMusic ? "demucs" : "none",
 					use_demucs: voice && keepMusic,
 					logo_enabled: false,
@@ -850,7 +852,16 @@ export function TranslationView() {
 					<option value="quality">Dịch sâu</option>
 				</select>
 				<p className="text-muted-foreground">
-					{processingMode === "fast" ? "Giữ kiểm tra chữ gốc; bỏ lượt đối chiếu bản dịch cuối, có thể còn lỗi nghĩa hoặc xưng hô." : processingMode === "quality" ? "Nhóm câu nhỏ hơn và đối chiếu bản dịch cuối; xử lý lâu hơn, không bảo đảm mọi câu đều đúng." : "Giữ quy trình dịch và đối chiếu hiện tại."}
+					{processingMode === "fast" ? "Đọc chữ trên máy và dịch; bỏ lượt đối chiếu bản dịch cuối, có thể còn lỗi nghĩa hoặc xưng hô." : processingMode === "quality" ? "Nhóm câu nhỏ hơn và đối chiếu bản dịch cuối; xử lý lâu hơn, không bảo đảm mọi câu đều đúng." : "Đọc chữ trên máy, dịch và đối chiếu bản dịch cuối."}
+				</p>
+			</label>
+			<label className="block text-xs space-y-2">
+				<span className="flex items-start gap-2">
+					<input type="checkbox" checked={verifyImages} disabled={locked} onChange={(e) => setVerifyImages(e.target.checked)} />
+					Đối chiếu thêm ảnh bằng Gemini
+				</span>
+				<p className="text-muted-foreground">
+					{verifyImages ? "Gemini đọc thêm ảnh để kiểm tra OCR; có thể chờ lâu hoặc từ chối. Khi lỗi, có thể tiếp tục bằng OCR + Gemini văn bản." : "Gemini nhận văn bản OCR để dịch. Những đoạn chưa đối chiếu ảnh sẽ được đánh dấu cần kiểm tra; không coi OCR là luôn chính xác."}
 				</p>
 			</label>
 			<label className="flex items-start gap-2 text-xs leading-relaxed">

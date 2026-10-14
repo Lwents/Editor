@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-15",
+  "engine": "Gemini Web",
+  "translation_policy": 23,
+  "mode": "fast",
+  "scope": "Eight synthetic sense-disambiguation cases; not an episode accuracy benchmark or HSK/IELTS certification.",
+  "reference_injected": false,
+  "cases": [
+    {
+      "language": "zh",
+      "source": [
+        "他不以为然。",
+        "她不以为意。",
+        "这是迫不得已的选择。",
+        "王爷多心了。"
+      ],
+      "translation": [
+        "Hắn không cho là đúng.",
+        "Nàng không để tâm.",
+        "Đây là lựa chọn bất đắc dĩ.",
+        "Vương gia nghĩ nhiều rồi."
+      ],
+      "seconds": 12.74
+    },
+    {
+      "language": "en",
+      "source": [
+        "They sanction the agreement.",
+        "They impose sanctions on the company.",
+        "I could hardly hear her.",
+        "You should have told me earlier."
+      ],
+      "translation": [
+        "Họ phê chuẩn thỏa thuận.",
+        "Họ áp lệnh trừng phạt lên công ty.",
+        "Tôi hầu như không nghe thấy cô ấy.",
+        "Đáng lẽ bạn phải nói với tôi sớm hơn."
+      ],
+      "seconds": 9.29
+    }
+  ],
+  "review": "All eight preserve the intended meaning in this small sample. No percentage extrapolated to films."
+}

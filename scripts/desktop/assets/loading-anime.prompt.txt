@@ -1,9 +1,0 @@
-Generated with the built-in image_gen tool.
-
-Use case: stylized-concept
-Asset type: transparent anime illustration for a desktop video editor loading screen.
-Primary request: an original cute anime character waiting while the app loads.
-Subject: one chibi anime girl wearing headphones, seated comfortably with a small laptop, cheerful calm expression.
-Style: polished clean anime illustration, crisp outlines, soft shading, restrained blue and lavender accents suitable for a dark interface.
-Composition: centered complete character and laptop, generous transparent padding, square composition, readable at 260 pixels.
-Constraints: genuinely transparent background; no text, no logo, no watermark, no spinner (the application will animate its own spinner).

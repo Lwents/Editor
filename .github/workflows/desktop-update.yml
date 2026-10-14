@@ -59,7 +59,7 @@ jobs:
           python -m pip install numpy opencv-python-headless
           if($LASTEXITCODE -ne 0){throw 'Native test dependencies failed'}
           Push-Location be
-          python -m unittest tests.test_native_frames
+          python -m unittest tests.test_native_frames tests.test_lexical_guidance
           Pop-Location
           if($LASTEXITCODE -ne 0){throw 'Native frame parity checks failed'}
           $Payload="$env:RUNNER_TEMP\EditorCI\app"

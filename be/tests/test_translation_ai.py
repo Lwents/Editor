@@ -56,6 +56,14 @@ class _FakeClient:
 
 
 class GeminiTranslationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_fast_translation_receives_only_relevant_sense_notes(self) -> None:
+        from app.services.ai.translation import _translate_gemini_batch, _initial_translation_memory
+        client = _FakeClient()
+        await _translate_gemini_batch(client, [{'id': 1, 'source': '他不以为然。'}],
+                                     'zh', 'vi', None, _initial_translation_memory(None), [], [], fast_mode=True)
+        payload = json.loads(client.chat.completions.calls[0]['messages'][1]['content'])
+        self.assertEqual([row['source'] for row in payload['lexical_guidance']], ['不以为然'])
+
     async def test_unsupported_romantic_address_is_rejected_before_checkpoint(self) -> None:
         from unittest.mock import AsyncMock
         from app.services.ai.translation import _translate_gemini_batch, TranslationBatchStructureError

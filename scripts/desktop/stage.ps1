@@ -13,6 +13,10 @@ CopyTree "$BuildRoot\electron" $Payload
 Copy-Item "$Payload\electron.exe" "$Payload\Editor.exe" -Force
 Remove-Item "$Payload\electron.exe" -Force
 CopyTree $PSScriptRoot "$Payload\resources\app"
+Remove-Item "$Payload\resources\app\tests" -Recurse -Force -ErrorAction SilentlyContinue
+foreach($UnusedAsset in @('loading-anime.png','loading-anime.prompt.txt')) {
+ Remove-Item "$Payload\resources\app\assets\$UnusedAsset" -Force -ErrorAction SilentlyContinue
+}
 & "$BuildRoot\python\python.exe" "$PSScriptRoot\package-update.py" $Payload --runtime-only
 if($LASTEXITCODE -ne 0){throw 'Runtime manifest failed'}
 foreach($Old in @('settings.html','settings.cjs','preload.cjs')) { Remove-Item (Join-Path "$Payload\resources\app" $Old) -Force -ErrorAction SilentlyContinue }

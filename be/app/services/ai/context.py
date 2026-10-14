@@ -71,11 +71,19 @@ async def analyze_video_context(
     }, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
     context_file = work_dir / "ai_context.json"
+    from app.services.ai.asr_cache import restore_artifacts, save_artifacts
+    shared_directory = Path(settings.storage_dir) / 'recognition-cache' / 'context' / fingerprint
+    # Identical transcript, evidence, video and model can reuse a successful
+    # context across jobs. Image and text-only contexts have different keys.
+    if not context_file.is_file():
+        await asyncio.to_thread(restore_artifacts, shared_directory, {'context.json': context_file})
     if context_file.is_file() and context_file.stat().st_size > 0:
         try:
             cached = json.loads(context_file.read_text(encoding="utf-8"))
-            if (isinstance(cached, dict) and isinstance(cached.get('_context_cache'), dict)
+            if (isinstance(cached, dict) and isinstance(cached.get('plot_summary'), str)
+                    and cached['plot_summary'].strip() and isinstance(cached.get('_context_cache'), dict)
                     and cached['_context_cache'].get('fingerprint') == fingerprint):
+                await asyncio.to_thread(save_artifacts, shared_directory, {'context.json': context_file})
                 return _sanitize_context(cached)
         except (OSError, json.JSONDecodeError):
             pass
@@ -147,6 +155,7 @@ async def analyze_video_context(
         if not isinstance(context.get('plot_summary'), str) or not context['plot_summary'].strip():
             raise RuntimeError('Gemini trả thiếu ngữ cảnh cốt truyện. Phụ đề nguồn đã được giữ để chạy tiếp.')
         _save_context(context_file, context, fingerprint)
+        await asyncio.to_thread(save_artifacts, shared_directory, {'context.json': context_file})
         return context
 
     frames = await asyncio.to_thread(_sample_video_frames, video_file) if video_file else []
@@ -181,6 +190,7 @@ async def analyze_video_context(
     context = _sanitize_context(context, transcript)
     if context:
         _save_context(context_file, context, fingerprint)
+        await asyncio.to_thread(save_artifacts, shared_directory, {'context.json': context_file})
     return context
 
 

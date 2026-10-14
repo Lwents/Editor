@@ -31,6 +31,7 @@ def package(payload, output, version):
             for file in sorted(directory.rglob('*')):
                 if not file.is_file(): continue
                 relative = file.relative_to(directory)
+                if scope == 'desktop' and 'tests' in relative.parts: continue
                 if any(part.startswith('.env') or part in {'__pycache__', 'ai.env', 'Cookies', 'Login Data'} for part in relative.parts): continue
                 if file.suffix in {'.pyc', '.log', '.map', '.ps1', '.iss', '.obj', '.lib', '.exp', '.pdb', '.cpp'} or file.name in {'package-release.py', 'package-update.py'}: continue
                 if scope == 'desktop' and relative.as_posix() == 'package.json':

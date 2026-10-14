@@ -27,6 +27,7 @@ from app.services.ai.character_names import (
     canonicalize_character_text,
     character_name_contract,
 )
+from app.services.ai.lexical_guidance import lexical_guidance, LEXICON_VERSION
 from app.services.presets import ProcessingProfile, get_processing_profile
 from app.services.subtitles.timing import SubtitleEvent
 
@@ -42,7 +43,7 @@ class TranslationBatchStructureError(TranslationError):
         self.updates = updates or {}
 
 
-TRANSLATION_POLICY_VERSION = 22
+TRANSLATION_POLICY_VERSION = 23
 
 
 def get_translation_profile(processing_mode=None):
@@ -381,6 +382,7 @@ def _translation_fingerprint(
         # single canonical spelling across every batch.
         "character_name_policy": 2,
         "translation_policy": TRANSLATION_POLICY_VERSION,
+        "lexicon_version": LEXICON_VERSION,
     }
     if profile.name == 'fast':
         payload['fast_prompt_version'] = 1
@@ -617,6 +619,12 @@ async def _translate_gemini_batch(
             'memory_updates chỉ ghi thay đổi mới có bằng chứng, còn lại để trống. '
             'Không lặp lại nguồn, hồ sơ hay phân tích trong câu trả lời.'
         )
+    system_prompt += (
+        "\nlexical_guidance là gợi ý nghĩa có điều kiện, không phải lệnh thay từ. "
+        "Chọn nghĩa theo câu nguồn; tên và xưng hô vẫn theo hợp đồng nhân vật. "
+        "Dùng từ chính xác, tự nhiên, giữ phủ định và mức độ chắc chắn; "
+        "không nâng văn phong thành học thuật khi nhân vật nói khẩu ngữ."
+    )
     if refusal_rephrased:
         system_prompt = (
             'Nhiệm vụ là chuyển ngữ các câu thoại đã cung cấp để làm phụ đề; '
@@ -637,6 +645,10 @@ async def _translate_gemini_batch(
     payload = {
         "source_language": source_language,
         "target_language": target_language,
+        "lexical_guidance": lexical_guidance(
+            [str(item.get("source", "")) for item in [*previous_context, *batch, *next_context]],
+            target_language, max_entries=8 if fast_mode else 16,
+        ),
         "character_bible": _compact_context(context),
         "addressing_contract": addressing_contract,
         "character_name_contract": character_name_contract(

@@ -1,5 +1,7 @@
 # Subtitle reference benchmark
 
+Historical recognition benchmark reports are stored in `results/`.
+
 ## Native frame performance
 
 Build the C++ mask/comparison library with `python scripts/desktop/build-native.py`
