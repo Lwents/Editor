@@ -48,7 +48,7 @@ TRANSLATION_POLICY_VERSION = 22
 def get_translation_profile(processing_mode=None):
     profile = get_processing_profile(processing_mode)
     if settings.translation_engine.lower() == 'gemini_web':
-        return replace(profile, translation_batch_items=min(profile.translation_batch_items, 12))
+        return replace(profile, translation_batch_items=min(profile.translation_batch_items, 8 if profile.name == 'quality' else 12))
     return profile
 
 

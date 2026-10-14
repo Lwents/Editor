@@ -29,10 +29,14 @@ def _quality_signature(source_video: Path | None) -> dict | None:
     return None
 
 
-def _validated_target(target: Path, work_dir: Path, source_video: Path | None) -> bool:
+def _validated_target(target: Path, work_dir: Path, source_video: Path | None, processing_mode=None) -> bool:
     from app.services.ai.asr_cache import digest
     try:
         marker = json.loads((work_dir / 'translation_quality.json').read_text(encoding='utf-8'))
+        from app.services.presets import get_processing_profile
+        mode = get_processing_profile(processing_mode).name
+        if marker.get('processing_mode', 'balanced') != mode:
+            return False
         if (source_video is not None and (work_dir / 'subtitles.recognition.json').is_file()
                 and marker.get('recognition_version') != ALGORITHM_VERSION):
             return False
@@ -41,7 +45,7 @@ def _validated_target(target: Path, work_dir: Path, source_video: Path | None) -
             if marker.get('vision_review_version') != VERSION:
                 return False
         return (marker.get('policy') == TRANSLATION_POLICY_VERSION
-                and marker.get('review_completed') is True
+                and (marker.get('review_completed') is True or mode == 'fast')
                 and marker.get('engine') == settings.translation_engine
                 and marker.get('model') == ('Gemini Web' if settings.translation_engine == 'gemini_web' else settings.ai_model)
                 and marker.get('video') == _quality_signature(source_video)
@@ -172,7 +176,7 @@ async def get_or_create_subtitles(
     target_file = work_dir / f"subtitles.{settings.target_language}.srt"
     if target_file.exists() and target_file.stat().st_size > 0 and (
         settings.translation_engine.lower() == 'passthrough'
-        or await asyncio.to_thread(_validated_target, target_file, work_dir, source_video)
+        or await asyncio.to_thread(_validated_target, target_file, work_dir, source_video, processing_mode)
     ):
         progress("Dùng lại phụ đề đã dịch xong", translation_progress_end)
         return target_file
@@ -377,9 +381,12 @@ async def _prepare_target_subtitles_impl(
         if on_measurement is not None:
             on_measurement(completed, total)
 
-    translated_events = await review_translated_events(
-        events, translated_events, context, work_dir, source_language,
-        target_language, processing_mode, review_progress)
+    from app.services.presets import get_processing_profile
+    mode = get_processing_profile(processing_mode).name
+    if mode != 'fast':
+        translated_events = await review_translated_events(
+            events, translated_events, context, work_dir, source_language,
+            target_language, processing_mode, review_progress)
     translated_events = split_long_subtitle_events(
         translated_events,
         max_chars=grouped_max_chars,
@@ -395,7 +402,8 @@ async def _prepare_target_subtitles_impl(
         'engine': settings.translation_engine,
         'model': 'Gemini Web' if settings.translation_engine == 'gemini_web' else settings.ai_model,
         'video': _quality_signature(source_video), 'sha256': digest(target),
-        'source_sha256': digest(grouped_file), 'review_completed': True},
+        'source_sha256': digest(grouped_file), 'processing_mode': mode,
+        'review_completed': mode != 'fast'},
         ensure_ascii=False, indent=2), encoding='utf-8')
     pending.replace(work_dir / 'translation_quality.json')
     return target

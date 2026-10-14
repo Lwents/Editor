@@ -14,7 +14,8 @@ from app.services.media.renderer import render_video
 from app.services.media.separation import separate_background_with_demucs
 from app.services.presets import get_processing_profile
 from app.services.store import job_store
-from app.services.subtitles.source import asr_timeout_for_duration, get_or_create_subtitles
+from app.services.subtitles.source import asr_timeout_for_duration
+from app.services.subtitles.recovery import get_or_create_subtitles
 
 class PipelineError(RuntimeError):
     pass
@@ -309,6 +310,13 @@ async def process_dubbing_job(job_id: str) -> None:
     except Exception as exc:
         traceback.print_exc()
         error = str(exc).strip() or f"{type(exc).__name__}: {exc!r}"
+        from app.services.ai.gemini_web import GeminiWebRefusal, GeminiWebVerificationRequired
+        if isinstance(exc, GeminiWebRefusal):
+            error = ('GEMINI_REFUSAL: Gemini từ chối xử lý lượt này; không phải lỗi thời gian chờ. '
+                     'Đã giữ checkpoint. Bạn có thể bấm Tiếp tục từ checkpoint; '
+                     'nếu vẫn bị từ chối, mở Gemini kiểm tra hoặc chuyển sang API. Chi tiết: ' + error)
+        elif isinstance(exc, GeminiWebVerificationRequired):
+            error = 'GEMINI_VERIFICATION: Mở Gemini để hoàn tất đăng nhập/xác minh rồi bấm Tiếp tục từ checkpoint. ' + error
         job_store.update(job_id, status=JobStatus.failed, stage="Xử lý thất bại", error=error)
     finally:
         from app.services import task_manager

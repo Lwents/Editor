@@ -105,6 +105,8 @@ class GeminiTranslationTests(unittest.IsolatedAsyncioTestCase):
         from app.services.ai.translation import get_translation_profile
         with patch.object(settings, 'translation_engine', 'gemini_web'):
             self.assertEqual(get_translation_profile('balanced').translation_batch_items, 12)
+            self.assertEqual(get_translation_profile('fast').translation_batch_items, 12)
+            self.assertEqual(get_translation_profile('quality').translation_batch_items, 8)
         with patch.object(settings, 'translation_engine', 'gemini'):
             self.assertEqual(get_translation_profile('balanced').translation_batch_items, 28)
 

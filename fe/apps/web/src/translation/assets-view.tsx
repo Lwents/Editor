@@ -82,11 +82,13 @@ export function TranslationView() {
 	const [binding, setBinding] = useState<Binding | null>(null);
 	const [ready, setReady] = useState(false);
 	const [job, setJob] = useState<Job | null>(null);
+	const [pollRevision, setPollRevision] = useState(0);
 	const [busy, setBusy] = useState(false);
 	const [now, setNow] = useState(Date.now());
 	const [stage, setStage] = useState("");
 	const [error, setError] = useState("");
 	const [voice, setVoice] = useState(false);
+	const [processingMode, setProcessingMode] = useState<"fast" | "balanced" | "quality">("balanced");
 	const [keepMusic, setKeepMusic] = useState(false);
 	const [voiceCatalog, setVoiceCatalog] = useState<VoiceCatalog | null>(null);
 	const [voiceEngine, setVoiceEngine] = useState("vieneu");
@@ -265,7 +267,7 @@ export function TranslationView() {
 			stopped = true;
 			clearTimeout(timer);
 		};
-	}, [binding?.jobId]);
+	}, [binding?.jobId, pollRevision]);
 	const running =
 		job && !["completed", "failed", "cancelled"].includes(job.status);
 	useEffect(() => {
@@ -276,6 +278,7 @@ export function TranslationView() {
 	const secondsWithoutProgress = Math.max(0, Math.floor((now - Date.parse(job?.progress_changed_at || job?.updated_at || new Date(now).toISOString())) / 1000));
 	const secondsWithoutContact = Math.max(0, Math.floor((now - Date.parse(job?.updated_at || new Date(now).toISOString())) / 1000));
 	const measuredPercent = job?.status === "completed" ? 100 : job?.stage_percent;
+	const stoppedLabel = job?.status === "failed" ? "Đã dừng" : job?.status === "cancelled" ? "Đã hủy" : null;
 	const locked = busy || Boolean(running) || Boolean(binding?.jobId && !job);
 	const track = scene?.tracks.overlay.find(
 		(t) => t.type === "text" && (!binding?.trackId || t.id === binding.trackId),
@@ -371,6 +374,21 @@ export function TranslationView() {
 		}
 		return saved;
 	}
+	async function resumeTranslation() {
+		if (!binding?.jobId || busy || running) return;
+		setBusy(true);
+		try {
+			await api(`/jobs/${binding.jobId}/retry`, { method: "POST" });
+			setJob(await api<Job>(`/jobs/${binding.jobId}`));
+			setError("");
+		} catch (e) {
+			setError(e instanceof Error ? e.message : "Không thể tiếp tục dịch.");
+		} finally {
+			// The job ID stays the same, so explicitly restart polling after retry.
+			setPollRevision((revision) => revision + 1);
+			setBusy(false);
+		}
+	}
 	async function startTranslation() {
 		const asset = media.find(
 			(a) => a.id === selectedMedia && a.type === "video",
@@ -400,7 +418,7 @@ export function TranslationView() {
 					editable_subtitles: true,
 					hard_subtitles: true,
 					video_speed: 1,
-					processing_mode: "balanced",
+					processing_mode: processingMode,
 					bgm_mode: voice && keepMusic ? "demucs" : "none",
 					use_demucs: voice && keepMusic,
 					logo_enabled: false,
@@ -823,6 +841,17 @@ export function TranslationView() {
 				</select>
 			</label>
 
+			<label className="block text-xs space-y-2">
+				Cách dịch
+				<select className="w-full bg-background rounded-md border p-2 text-sm" value={processingMode} disabled={locked} onChange={(e) => setProcessingMode(e.target.value as "fast" | "balanced" | "quality")}>
+					<option value="fast">Dịch nhanh</option>
+					<option value="balanced">Cân bằng</option>
+					<option value="quality">Dịch sâu</option>
+				</select>
+				<p className="text-muted-foreground">
+					{processingMode === "fast" ? "Giữ kiểm tra chữ gốc; bỏ lượt đối chiếu bản dịch cuối, có thể còn lỗi nghĩa hoặc xưng hô." : processingMode === "quality" ? "Nhóm câu nhỏ hơn và đối chiếu bản dịch cuối; xử lý lâu hơn, không bảo đảm mọi câu đều đúng." : "Giữ quy trình dịch và đối chiếu hiện tại."}
+				</p>
+			</label>
 			<label className="flex items-start gap-2 text-xs leading-relaxed">
 				<input
 					aria-label="Sub ngắn, mỗi đoạn 1 dòng"
@@ -950,14 +979,14 @@ export function TranslationView() {
 					<div className="flex items-start justify-between gap-3">
 						<p className="text-xs">{stage || job?.stage}</p>
 						<span className="shrink-0 text-xs font-semibold tabular-nums">
-							{measuredPercent != null ? `${measuredPercent}%` : "Đang xử lý…"}
+							{stoppedLabel || (measuredPercent != null ? `${measuredPercent}%` : "Đang xử lý…")}
 						</span>
 					</div>
 					<progress
 						className="w-full accent-blue-500"
 						max={100}
 						aria-label="Tiến độ bước hiện tại"
-						value={measuredPercent ?? undefined}
+						value={measuredPercent ?? (stoppedLabel ? 0 : undefined)}
 					/>
 					{running && (
 						<p className="text-xs text-muted-foreground tabular-nums">
@@ -1012,17 +1041,28 @@ export function TranslationView() {
 					role="alert"
 				>
 					{error}
+					{job?.status === "failed" && binding?.jobId && (
+						<>
+							<p className="mt-2 text-xs text-muted-foreground">
+								Tiếp tục cùng tác vụ để dùng lại dữ liệu đã xử lý và các batch đã lưu. Batch chưa hoàn tất sẽ được gửi lại cho Gemini.
+							</p>
+							<Button className="mt-2" variant="outline" size="sm" disabled={busy} onClick={() => void resumeTranslation()}>
+								{busy ? "Đang tiếp tục…" : "Tiếp tục từ checkpoint"}
+							</Button>
+						</>
+					)}
 					<Button
 						className="mt-2"
 						variant="outline"
 						size="sm"
+						disabled={busy || Boolean(running)}
 						onClick={() => {
 							setJob(null);
 							setBinding(null);
 							setError("");
 						}}
 					>
-						Bắt đầu lại
+						{job?.status === "failed" && binding?.jobId ? "Tạo bản dịch mới" : "Bắt đầu lại"}
 					</Button>
 				</div>
 			)}
