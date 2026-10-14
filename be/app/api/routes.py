@@ -2106,6 +2106,7 @@ async def evaluate_job_output(job_id: str) -> JobProgress:
 @router.post("/jobs/{job_id}/retry", response_model=JobCreateResponse, tags=["jobs"])
 async def retry_job(
     job_id: str,
+    text_only_gemini: bool | None = None,
     auto_detect_blur: bool = False,
     blur_box_y_percent: int | None = None,
     blur_box_height_percent: int | None = None,
@@ -2126,6 +2127,8 @@ async def retry_job(
         }.items()
         if value is not None
     }
+    if text_only_gemini is not None:
+        request_updates['text_only_gemini'] = text_only_gemini
     if auto_detect_blur:
         from app.services.ai.detect_regions import auto_detect_blur_regions_ai, review_and_build_blur_config
 

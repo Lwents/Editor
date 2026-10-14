@@ -27,6 +27,8 @@ def recognition_report(work_dir: Path) -> dict:
         recognized = text_key(' '.join(e.text for e in nearby))
         displayed = text_key(cue['text'])
         reasons = []
+        if cue.get('image_verification_skipped'):
+            reasons.append('Chưa đối chiếu ảnh bằng Gemini; đang giữ chữ OCR trên máy')
         if cue.get('needs_review'):
             reasons.append('Chữ mờ hoặc kết quả giữa các khung hình chưa ổn định')
         # Subtitles can legitimately paraphrase speech. This is a review hint,

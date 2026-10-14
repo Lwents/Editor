@@ -97,7 +97,7 @@ async def analyze_video_context(
         for attempt in range(2):
             try:
                 request_messages = messages
-                if attempt:
+                if attempt or not attached:
                     request_messages = [
                         {'role': 'system', 'content':
                          'Đọc transcript nguồn để hỗ trợ dịch phụ đề. Không có ảnh cảnh trong lượt này. '

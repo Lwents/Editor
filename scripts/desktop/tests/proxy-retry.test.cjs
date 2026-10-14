@@ -23,8 +23,11 @@ const ts = require(process.argv[2] || '../../../fe/apps/web/node_modules/typescr
   assert.equal(calls.length, 1);
   assert.ok(calls[0].url.endsWith('/api/jobs/job-test/retry'));
   assert.equal(calls[0].options.method,'POST');
+  const recovery = new Request('http://localhost:5176/api/auto-translate/api/jobs/job-test/retry?text_only_gemini=true', {method:'POST',headers:{host:'localhost:5176',origin:'http://localhost:5176'}});
+  assert.equal((await handler.POST(recovery, context)).status,200);
+  assert.ok(calls[1].url.endsWith('/retry?text_only_gemini=true'));
   assert.equal((await handler.POST(request('https://foreign.example'), context)).status,403);
-  assert.equal(calls.length,1);
+  assert.equal(calls.length,2);
   assert.equal((await handler.POST(request('http://localhost:5176'),{params:Promise.resolve({path:['api','jobs','job-test','delete']})})).status,404);
   console.log('Retry bridge: allowed POST reaches backend; foreign origins and unsupported routes rejected');
  } finally {global.fetch=originalFetch;fs.rmSync(directory,{recursive:true,force:true});}

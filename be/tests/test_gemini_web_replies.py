@@ -102,6 +102,7 @@ class GeminiReplyTests(unittest.TestCase):
         self.assertTrue(is_refusal('Tôi là một mô hình ngôn ngữ nên điều đó nằm ngoài mục đích mà tôi được tạo ra.'))
         self.assertTrue(is_refusal('Tôi không thể trợ giúp về điều đó, vì tôi chỉ là một mô hình ngôn ngữ.'))
         self.assertTrue(is_refusal('Tôi không được lập trình để làm điều đó.'))
+        self.assertTrue(is_refusal('Yêu cầu của bạn nằm ngoài khả năng tôi được lập trình. Tôi chỉ có thể tạo văn bản.'))
         self.assertTrue(is_refusal('Tôi chỉ là một công nghệ trí tuệ nhân tạo dựa trên văn bản, nên không thể trợ giúp về điều đó.'))
         self.assertFalse(is_refusal('Chữ nhìn thấy là 主子.'))
 

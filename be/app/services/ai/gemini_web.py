@@ -41,6 +41,7 @@ def is_refusal(text: str) -> bool:
         "tôi không thể hỗ trợ", "i cannot help with", "i can’t help with",
         "not designed to", "outside my purpose",
         "chỉ có thể xử lý văn bản", "không thể đọc ảnh",
+        "chỉ có thể tạo văn bản", "ngoài khả năng tôi được lập trình",
         "cannot view images", "unable to process images",
         "i cannot assist with", "i can’t assist with", "i can't assist with",
     ))

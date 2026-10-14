@@ -64,6 +64,11 @@ async function forward(
 			const language = new URL(request.url).searchParams.get("language");
 			if (language !== null) destination.searchParams.set("language", language);
 		}
+		if (request.method === "POST" && route.endsWith("/retry")) {
+			const textOnly = new URL(request.url).searchParams.get("text_only_gemini");
+			if (textOnly === "true" || textOnly === "false")
+				destination.searchParams.set("text_only_gemini", textOnly);
+		}
 		const response = await fetch(destination, options);
 		const outgoing = new Headers({ "cache-control": "no-store" });
 		for (const key of [

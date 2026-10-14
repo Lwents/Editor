@@ -74,6 +74,7 @@ class DubbingRequest(BaseModel):
     auto_detect_sub: bool = False
     auto_detect_logo: bool = False
     processing_mode: ProcessingMode = "balanced"
+    text_only_gemini: bool = False
 
     @model_validator(mode="after")
     def validate_input_source(self) -> "DubbingRequest":

@@ -17,6 +17,7 @@ from app.services.subtitles.ass import write_srt
 from app.services.subtitles.timing import group_subtitle_events, parse_srt, split_long_subtitle_events
 from app.services.subtitles.visible import ALGORITHM_VERSION, visible_source_subtitles
 from app.services.subtitles.performance import measure_stage
+from app.services.subtitles.mode import text_only_gemini
 
 
 class SubtitleSourceError(RuntimeError):
@@ -37,6 +38,8 @@ def _validated_target(target: Path, work_dir: Path, source_video: Path | None, p
         from app.services.presets import get_processing_profile
         mode = get_processing_profile(processing_mode).name
         if marker.get('processing_mode', 'balanced') != mode:
+            return False
+        if marker.get('text_only_gemini', False) != text_only_gemini.get():
             return False
         if (source_video is not None and (work_dir / 'subtitles.recognition.json').is_file()
                 and marker.get('recognition_version') != ALGORITHM_VERSION):
@@ -314,7 +317,7 @@ async def _prepare_target_subtitles_impl(
     if visible_file and source_video is not None and settings.translation_engine.lower() == 'gemini_web':
         from app.services.subtitles.vision_review import review_visible_captions
         raw_events, visual_context = await measure_stage('caption_verification', review_visible_captions(source_video, raw_events, work_dir, progress), work_dir)
-        write_srt(raw_events, work_dir / 'subtitles.source.verified.srt')
+        write_srt(raw_events, work_dir / ('subtitles.source.provisional.srt' if text_only_gemini.get() else 'subtitles.source.verified.srt'))
     source_file = work_dir / "subtitles.source.srt"
     if not source_file.is_file():
         write_srt(raw_events, source_file)
@@ -343,7 +346,7 @@ async def _prepare_target_subtitles_impl(
     progress("Gemini đọc ngữ cảnh cốt truyện, nhân vật và xưng hô" if settings.translation_engine == 'gemini_web' else "AI nhận diện tên phim, nhân vật và vai vế", max(0, translation_progress_start - 1))
     if on_measurement is not None:
         on_measurement(0, 1)
-    context = await measure_stage('context', analyze_video_context(source_video, events, work_dir, verified_context=visual_context), work_dir)
+    context = await measure_stage('context', analyze_video_context(None if text_only_gemini.get() else source_video, events, work_dir, verified_context=visual_context), work_dir)
     if on_measurement is not None:
         on_measurement(1, 1)
     context = _merge_context(context, visual_context)
@@ -404,6 +407,7 @@ async def _prepare_target_subtitles_impl(
         'model': 'Gemini Web' if settings.translation_engine == 'gemini_web' else settings.ai_model,
         'video': _quality_signature(source_video), 'sha256': digest(target),
         'source_sha256': digest(grouped_file), 'processing_mode': mode,
+        'text_only_gemini': text_only_gemini.get(),
         'review_completed': mode != 'fast'},
         ensure_ascii=False, indent=2), encoding='utf-8')
     pending.replace(work_dir / 'translation_quality.json')

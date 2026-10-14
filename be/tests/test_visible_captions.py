@@ -208,6 +208,28 @@ class VisibleCaptionTests(unittest.TestCase):
 
 
 class ContextRetryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_explicit_text_only_retains_ocr_and_does_not_cache_it_as_verified(self):
+        from app.services.subtitles.mode import text_only_gemini
+        token = text_only_gemini.set(True)
+        try:
+            with TemporaryDirectory() as directory, \
+                    patch('app.services.subtitles.vision_review._local_consensus', return_value=[]), \
+                    patch('app.services.subtitles.vision_review._verify_caption_gaps', side_effect=lambda source, events, items, regions: items), \
+                    patch('app.services.ai.gemini_web.browser.complete', AsyncMock()) as complete:
+                root = Path(directory)
+                source = root / 'source.mp4'; source.write_bytes(b'video')
+                (root / 'subtitles.recognition.json').write_text(json.dumps({'language_model':'ch','cues':[
+                    {'start':1,'end':2,'text':'是','needs_review':True,'confidence':.8}]}))
+                reviewed, context = await review_visible_captions(source, [SubtitleEvent(1,2,'是')], root, lambda *args: None)
+                self.assertEqual(reviewed, [SubtitleEvent(1,2,'是')])
+                complete.assert_not_awaited()
+                self.assertEqual(json.loads((root/'subtitles.vision-review.json').read_text())['items'], [])
+                report = json.loads((root/'subtitles.recognition.verified.json').read_text())
+                self.assertTrue(report['cues'][0]['needs_review'])
+                self.assertTrue(report['cues'][0]['image_verification_skipped'])
+                self.assertIn('chưa đối chiếu ảnh', ' '.join(context['translation_notes']))
+        finally:
+            text_only_gemini.reset(token)
     async def test_caption_verification_does_not_retry_captcha(self):
         complete = AsyncMock(side_effect=GeminiWebVerificationRequired('CAPTCHA'))
         with TemporaryDirectory() as directory, \

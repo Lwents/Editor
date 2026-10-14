@@ -85,6 +85,7 @@ async def process_dubbing_job(job_id: str) -> None:
                 on_measurement=measurement,
                 asr_timeout_seconds=asr_timeout_seconds,
                 processing_mode=job.request.processing_mode,
+                text_only_gemini=job.request.text_only_gemini,
             )
             if not subtitle_file.exists() or subtitle_file.stat().st_size == 0:
                 raise PipelineError("Không tạo được phụ đề để mở trong trình biên tập.")
@@ -136,6 +137,7 @@ async def process_dubbing_job(job_id: str) -> None:
                 on_measurement=measurement,
                 asr_timeout_seconds=asr_timeout_seconds,
                 processing_mode=job.request.processing_mode,
+                text_only_gemini=job.request.text_only_gemini,
             )
             progress("Tạo giọng đọc khớp phụ đề", 70)
             narration_file = work_dir / "narration_timed.wav"
@@ -179,6 +181,7 @@ async def process_dubbing_job(job_id: str) -> None:
                 on_measurement=measurement,
                 asr_timeout_seconds=asr_timeout_seconds,
                 processing_mode=job.request.processing_mode,
+                text_only_gemini=job.request.text_only_gemini,
             )
             progress("Tạo giọng đọc khớp phụ đề", 70)
             narration_file = work_dir / "narration_timed.wav"

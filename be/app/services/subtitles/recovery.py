@@ -20,5 +20,10 @@ async def recover_subtitle_timeout(operation, progress):
 
 async def get_or_create_subtitles(*args, **kwargs):
     from app.services.subtitles.source import get_or_create_subtitles as create
+    from app.services.subtitles.mode import text_only_gemini
+    token = text_only_gemini.set(kwargs.pop('text_only_gemini', False))
     progress = kwargs.get('progress') or args[4]
-    return await recover_subtitle_timeout(lambda: create(*args, **kwargs), progress)
+    try:
+        return await recover_subtitle_timeout(lambda: create(*args, **kwargs), progress)
+    finally:
+        text_only_gemini.reset(token)

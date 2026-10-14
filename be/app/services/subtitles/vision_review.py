@@ -203,7 +203,7 @@ def _verify_caption_gaps(source, events, items, regions):
 
 def _safe_context(context):
     cleaned = dict(context)
-    names = []; notes = []
+    names = []; notes = list(context.get('translation_notes', [])) if isinstance(context.get('translation_notes'), list) else []
     for character in context.get('characters', []):
         if not isinstance(character, dict):
             continue
@@ -392,6 +392,8 @@ def apply_review(events, ids, items):
 
 
 async def review_visible_captions(source: Path, events, work_dir: Path, progress):
+    from app.services.subtitles.mode import text_only_gemini
+    text_only = text_only_gemini.get()
     from app.services.ai.gemini_web import GeminiWebError, GeminiWebRefusal, GeminiWebTimeout, GeminiWebVerificationRequired, browser
     report_file = work_dir / 'subtitles.recognition.json'
     report = json.loads(report_file.read_text(encoding='utf-8')) if report_file.is_file() else {}
@@ -441,7 +443,7 @@ async def review_visible_captions(source: Path, events, work_dir: Path, progress
     if items:
         pending = cache.with_suffix('.pending.json')
         pending.write_text(json.dumps({'fingerprint': fingerprint, 'items': items, 'context': context}, ensure_ascii=False, indent=2), encoding='utf-8'); pending.replace(cache)
-    for start in range(0, len(pending_ids), IMAGE_BATCH_SIZE):
+    for start in range(0, 0 if text_only else len(pending_ids), IMAGE_BATCH_SIZE):
         batch_ids = pending_ids[start:start + IMAGE_BATCH_SIZE]
         completed = len(items)
         progress(f'Gemini kiểm tra chữ còn chưa rõ ({completed}/{len(ids)} đoạn)', 66)
@@ -492,6 +494,13 @@ async def review_visible_captions(source: Path, events, work_dir: Path, progress
         pending = cache.with_suffix('.pending.json')
         pending.write_text(json.dumps({'fingerprint': fingerprint, 'items': items, 'context': context}, ensure_ascii=False, indent=2), encoding='utf-8')
         pending.replace(cache)
+    provisional_ids = set(pending_ids) if text_only else set()
+    if provisional_ids:
+        items = [*items, *({'id': i, 'text': events[i-1].text, 'is_caption': True,
+                           'confidence': 0, 'method': 'unverified_ocr'} for i in provisional_ids)]
+        context = {**context, 'translation_notes': [*context.get('translation_notes', []),
+            f'{len(provisional_ids)} đoạn chưa đối chiếu ảnh vì người dùng chọn chỉ gửi văn bản. '
+            'Giữ chữ OCR và đánh dấu cần kiểm tra, không suy đoán tên/người nói từ ảnh chưa đọc.']}
     reviewed, decisions = apply_review(events, ids, items)
     verified_cues = []
     for event in reviewed:
@@ -502,6 +511,7 @@ async def review_visible_captions(source: Path, events, work_dir: Path, progress
         if checked and len(checked) == len(original_ids):
             needs_review = not all(d['is_caption'] and d['confidence'] >= .9 for d in checked)
         verified_cues.append({'start': event.start, 'end': event.end, 'text': event.text,
+                           'image_verification_skipped': bool(provisional_ids.intersection(original_ids)),
                               'confidence': min((cue.get('confidence', 0) for cue in original_cues), default=0),
                               'needs_review': needs_review,
                               'vision_checked': any(not d.get('method', '').startswith('local_') for d in checked),
@@ -509,7 +519,12 @@ async def review_visible_captions(source: Path, events, work_dir: Path, progress
                               'review_methods': sorted({d.get('method', 'gemini_image_review') for d in checked})})
     verified_report = work_dir / 'subtitles.recognition.verified.json'
     pending = verified_report.with_suffix('.pending.json')
-    pending.write_text(json.dumps({**report, 'cues': verified_cues, 'vision_review': True}, ensure_ascii=False, indent=2), encoding='utf-8'); pending.replace(verified_report)
+    pending.write_text(json.dumps({**report, 'cues': verified_cues, 'vision_review': True,
+                                  'vision_review_complete': not provisional_ids,
+                                  'text_only_gemini': text_only}, ensure_ascii=False, indent=2), encoding='utf-8'); pending.replace(verified_report)
     local_count = sum(item.get('method', '').startswith('local_') for item in items)
-    progress(f'Đã kiểm tra {len(ids)}/{len(ids)} đoạn chữ ({local_count} bằng OCR, {len(ids)-local_count} bằng Gemini)', 66)
+    if provisional_ids:
+        progress(f'Đọc chữ gốc xong; {len(provisional_ids)} đoạn chưa đối chiếu ảnh, sẽ đánh dấu cần kiểm tra', 66)
+    else:
+        progress(f'Đã kiểm tra {len(ids)}/{len(ids)} đoạn chữ ({local_count} bằng OCR, {len(ids)-local_count} bằng Gemini)', 66)
     return reviewed, _safe_context(context)

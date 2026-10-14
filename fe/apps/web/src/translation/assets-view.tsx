@@ -374,11 +374,11 @@ export function TranslationView() {
 		}
 		return saved;
 	}
-	async function resumeTranslation() {
+	async function resumeTranslation(textOnly = false) {
 		if (!binding?.jobId || busy || running) return;
 		setBusy(true);
 		try {
-			await api(`/jobs/${binding.jobId}/retry`, { method: "POST" });
+			await api(`/jobs/${binding.jobId}/retry${textOnly ? "?text_only_gemini=true" : ""}`, { method: "POST" });
 			setJob(await api<Job>(`/jobs/${binding.jobId}`));
 			setError("");
 		} catch (e) {
@@ -1050,6 +1050,12 @@ export function TranslationView() {
 							<Button className="mt-2" variant="outline" size="sm" disabled={busy} onClick={() => void resumeTranslation()}>
 								{busy ? "Đang tiếp tục…" : "Tiếp tục từ checkpoint"}
 							</Button>
+							{error.includes("Gemini") && (
+								<div className="mt-3 space-y-2">
+									<p className="text-xs text-muted-foreground">Nếu Gemini bị kẹt khi đọc ảnh: dùng chữ OCR trên máy và các đoạn đã xác minh, chỉ gửi văn bản cho Gemini dịch/đối chiếu. Đoạn chưa kiểm tra ảnh sẽ được đánh dấu cần duyệt.</p>
+									<Button variant="outline" size="sm" disabled={busy} onClick={() => void resumeTranslation(true)}>Dịch tiếp bằng OCR + Gemini văn bản</Button>
+								</div>
+							)}
 						</>
 					)}
 					<Button
