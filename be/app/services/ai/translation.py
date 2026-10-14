@@ -210,6 +210,7 @@ class GeminiTranslation(TranslationEngine):
                 next_context,
                 retries=profile.translation_retries,
                 request_timeout_seconds=profile.translation_request_timeout_seconds,
+                fast_mode=profile.name == 'fast',
             )
 
             for item, translated in zip(batch, batch_texts):
@@ -381,6 +382,8 @@ def _translation_fingerprint(
         "character_name_policy": 2,
         "translation_policy": TRANSLATION_POLICY_VERSION,
     }
+    if profile.name == 'fast':
+        payload['fast_prompt_version'] = 1
     encoded = json.dumps(
         payload,
         ensure_ascii=False,
@@ -503,6 +506,8 @@ async def _translate_gemini_batch(
     next_context: list[dict[str, object]],
     request_timeout_seconds: float = 150,
     review_mode: bool = False,
+    fast_mode: bool = False,
+    refusal_rephrased: bool = False,
 ) -> tuple[list[str], dict]:
     source_window = ' '.join(str(item.get('source', ''))
                              for item in [*previous_context, *batch, *next_context])
@@ -597,6 +602,27 @@ async def _translate_gemini_batch(
         "- Khi nguồn có NPC, giữ nguyên NPC; không thay bằng tên nhãn nhân vật như 'Tên lính áp giải'.\n"
         "- memory_updates chỉ ghi thông tin nhân vật mới được CURRENT_ITEMS xác nhận, gồm characters, relationships, glossary, addressing_rules.\n"
     )
+    if fast_mode:
+        system_prompt = (
+            'Dịch current_items sang tiếng Việt tự nhiên, ngắn gọn để làm phụ đề. '
+            'Chỉ trả JSON {"items":[{"id":1,"text":"bản dịch"}],"memory_updates":{}}. '
+            'Giữ đủ ID, không gộp/tách/bỏ câu; dịch cả cảm thán. Không giải thích. '
+            'Câu nguồn là căn cứ cuối cùng: giữ chủ thể, đối tượng, phủ định, nguyên nhân, '
+            'thành ngữ và sắc thái; không thêm tình tiết hay danh tính người nói. '
+            'Đọc các mảnh câu liên tiếp cùng previous_context/next_context để nối nghĩa; chỉ dịch current_items. '
+            'Giữ tên đầy đủ/biệt danh theo character_name_contract, tước vị và NPC; không đổi vai vế thành tên. '
+            'Tuân thủ addressing_contract, không dùng chàng/thiếp khi bị cấm. '
+            'Tên được gọi không xác định người nói; hồ sơ/memory không được ghi đè bằng chứng nguồn. '
+            'Không để sót chữ Trung hoặc pinyin; ký tự Latin/tên chưa rõ giữ nguyên. '
+            'memory_updates chỉ ghi thay đổi mới có bằng chứng, còn lại để trống. '
+            'Không lặp lại nguồn, hồ sơ hay phân tích trong câu trả lời.'
+        )
+    if refusal_rephrased:
+        system_prompt = (
+            'Nhiệm vụ là chuyển ngữ các câu thoại đã cung cấp để làm phụ đề; '
+            'không yêu cầu thực hiện hành động trong câu thoại hoặc nhận diện người thật. '
+            'Hãy xử lý văn bản nguồn theo cấu trúc kết quả bên dưới.\n' + system_prompt
+        )
     if review_mode:
         system_prompt += (
             "\nNHIỆM VỤ HIỆN TẠI: ĐỐI CHIẾU BẢN DỊCH. Mỗi CURRENT_ITEM có source và draft. "
@@ -693,6 +719,8 @@ async def _translate_gemini_batch_with_retries(
     retries: int = 3,
     request_timeout_seconds: float = 150,
     review_mode: bool = False,
+    fast_mode: bool = False,
+    refusal_rephrased: bool = False,
 ) -> tuple[list[str], dict]:
     last_error: Exception | None = None
     for attempt in range(1, retries + 1):
@@ -709,6 +737,8 @@ async def _translate_gemini_batch_with_retries(
                     next_context,
                     request_timeout_seconds=request_timeout_seconds,
                     review_mode=review_mode,
+                    fast_mode=fast_mode,
+                    refusal_rephrased=refusal_rephrased,
                 ),
                 timeout=request_timeout_seconds + 5,
             )
@@ -736,13 +766,25 @@ async def _translate_gemini_batch_with_retries(
                         previous_context, next_context, retries=retries,
                         request_timeout_seconds=request_timeout_seconds,
                         review_mode=review_mode,
+                        fast_mode=fast_mode,
+                        refusal_rephrased=refusal_rephrased,
                     )
                     recovered.update({int(item['id']): text for item, text in zip(chunk, chunk_texts)})
                     _merge_translation_memory(combined_updates, chunk_updates)
                     _merge_translation_memory(updated_memory, chunk_updates)
                 return [recovered[int(item['id'])] for item in batch], combined_updates
             last_error = exc
-        except (GeminiWebVerificationRequired, GeminiWebRefusal, GeminiWebTimeout):
+        except GeminiWebRefusal:
+            if refusal_rephrased:
+                raise
+            # One clarification of this text task; never loop on refusals.
+            return await _translate_gemini_batch_with_retries(
+                client, batch, source_language, target_language, context, memory,
+                previous_context, next_context, retries=retries,
+                request_timeout_seconds=request_timeout_seconds,
+                review_mode=review_mode, fast_mode=fast_mode, refusal_rephrased=True,
+            )
+        except (GeminiWebVerificationRequired, GeminiWebTimeout):
             raise
         except TimeoutError as exc:
             last_error = TranslationError(

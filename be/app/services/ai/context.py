@@ -97,7 +97,7 @@ async def analyze_video_context(
         for attempt in range(2):
             try:
                 request_messages = messages
-                if attempt and attached:
+                if attempt:
                     request_messages = [
                         {'role': 'system', 'content':
                          'Đọc transcript nguồn để hỗ trợ dịch phụ đề. Không có ảnh cảnh trong lượt này. '
@@ -122,9 +122,9 @@ async def analyze_video_context(
                 # analysis still works. One different, text-only task is
                 # allowed; never replay a refused text request or claim its
                 # images were read. Browser refusal already resets the chat.
-                if attempt or not attached:
+                if attempt:
                     raise
-                print('[Context] Gemini refused scene images; using one transcript-only context request.', flush=True)
+                print('[Context] Gemini refused context; clarifying once using source transcript only.', flush=True)
             except GeminiWebError as exc:
                 if attempt or (isinstance(exc, GeminiWebTimeout) and not attached):
                     raise

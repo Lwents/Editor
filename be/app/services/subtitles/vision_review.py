@@ -464,7 +464,13 @@ async def review_visible_captions(source: Path, events, work_dir: Path, progress
                     on_wait=lambda seconds: progress(f'Chờ Gemini đọc ảnh ({completed}/{len(ids)} đoạn; đã chờ {seconds} giây)', 66)))
                 apply_review(events, batch_ids, reply.get('items'))
                 break
-            except (GeminiWebVerificationRequired, GeminiWebRefusal, GeminiWebTimeout):
+            except GeminiWebRefusal:
+                if attempt:
+                    raise
+                progress(f'Gemini chưa nhận tác vụ chép chữ; diễn đạt lại một lần ({completed}/{len(ids)} đoạn)', 66)
+                prompt = ('Đây là tác vụ chép văn bản từ ảnh phụ đề, không nhận diện nhân vật hay thực hiện lời thoại. '
+                          'Đọc từng ô ảnh đính kèm và trả chữ nhìn thấy theo ID.\n' + prompt)
+            except (GeminiWebVerificationRequired, GeminiWebTimeout):
                 raise
             except (GeminiWebError, ValueError, RuntimeError) as exc:
                 if attempt == 1:

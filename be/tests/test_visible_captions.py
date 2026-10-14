@@ -222,7 +222,7 @@ class ContextRetryTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(complete.await_count, 1)
             self.assertFalse((root / 'subtitles.vision-review.json').exists())
 
-    async def test_caption_verification_does_not_retry_refusal(self):
+    async def test_caption_verification_clarifies_refusal_once(self):
         complete = AsyncMock(side_effect=GeminiWebRefusal('Gemini từ chối'))
         with TemporaryDirectory() as directory, \
                 patch('app.services.subtitles.vision_review._frame_sheet'), \
@@ -233,7 +233,8 @@ class ContextRetryTests(unittest.IsolatedAsyncioTestCase):
                 {'start': 1, 'end': 2, 'needs_review': True, 'confidence': .4}]}))
             with self.assertRaises(GeminiWebRefusal):
                 await review_visible_captions(source, [SubtitleEvent(1, 2, '缩绾')], root, lambda *args: None)
-            self.assertEqual(complete.await_count, 1)
+            self.assertEqual(complete.await_count, 2)
+            self.assertIn('tác vụ chép văn bản', complete.await_args_list[1].args[0][0]['content'])
             self.assertFalse((root / 'subtitles.vision-review.json').exists())
 
     async def test_text_context_timeout_is_not_replayed(self):
@@ -257,13 +258,13 @@ class ContextRetryTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(complete.await_args_list[1].kwargs['attachments'])
             self.assertTrue(any('Ảnh cảnh chưa được kiểm tra' in note for note in context['translation_notes']))
 
-    async def test_refused_text_context_stops_without_another_request(self):
+    async def test_refused_text_context_clarifies_once_and_stops(self):
         complete = AsyncMock(side_effect=GeminiWebRefusal('Không thể trợ giúp'))
         with TemporaryDirectory() as directory, patch.object(settings, 'translation_engine', 'gemini_web'), \
                 patch('app.services.ai.gemini_web.browser.complete', complete):
             with self.assertRaises(GeminiWebRefusal):
                 await analyze_video_context(None, [SubtitleEvent(1, 2, '小心')], Path(directory))
-            self.assertEqual(complete.await_count, 1)
+            self.assertEqual(complete.await_count, 2)
 
     async def test_captcha_requires_a_person_and_does_not_retry(self):
         complete = AsyncMock(side_effect=GeminiWebVerificationRequired('CAPTCHA'))

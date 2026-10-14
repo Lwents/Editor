@@ -165,14 +165,25 @@ class GeminiVerificationTests(unittest.IsolatedAsyncioTestCase):
                                                           'zh', 'vi', {}, {}, [], [], retries=3)
         self.assertEqual(complete.await_count, 1)
 
-    async def test_translation_does_not_retry_refusal(self):
+    async def test_translation_clarifies_refusal_once_then_stops(self):
         from app.services.ai.translation import _translate_gemini_batch_with_retries
         complete = AsyncMock(side_effect=GeminiWebRefusal('Gemini từ chối'))
         with patch('app.services.ai.translation._translate_gemini_batch', complete):
             with self.assertRaises(GeminiWebRefusal):
                 await _translate_gemini_batch_with_retries(None, [{'id': 1, 'source': '小心'}],
                                                           'zh', 'vi', {}, {}, [], [], retries=3)
-        self.assertEqual(complete.await_count, 1)
+        self.assertEqual(complete.await_count, 2)
+        self.assertFalse(complete.await_args_list[0].kwargs['refusal_rephrased'])
+        self.assertTrue(complete.await_args_list[1].kwargs['refusal_rephrased'])
+
+    async def test_translation_recovers_after_one_task_clarification(self):
+        from app.services.ai.translation import _translate_gemini_batch_with_retries
+        complete = AsyncMock(side_effect=[GeminiWebRefusal('Không thể trợ giúp'), (['Cẩn thận'], {})])
+        with patch('app.services.ai.translation._translate_gemini_batch', complete):
+            result = await _translate_gemini_batch_with_retries(None, [{'id': 1, 'source': '小心'}],
+                                                              'zh', 'vi', {}, {}, [], [], retries=1)
+        self.assertEqual(result, (['Cẩn thận'], {}))
+        self.assertEqual(complete.await_count, 2)
 
     async def test_translation_does_not_retry_google_verification(self):
         from app.services.ai.translation import _translate_gemini_batch_with_retries

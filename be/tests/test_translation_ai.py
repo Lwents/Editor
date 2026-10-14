@@ -110,6 +110,19 @@ class GeminiTranslationTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(settings, 'translation_engine', 'gemini'):
             self.assertEqual(get_translation_profile('balanced').translation_batch_items, 28)
 
+    async def test_fast_prompt_is_shorter_and_keeps_translation_contracts(self):
+        from app.services.ai.translation import _translate_gemini_batch
+        client = SimpleNamespace(chat=SimpleNamespace(completions=_FakeCompletions()))
+        args = (client, [{'id': 1, 'source': '小心'}], 'zh', 'vi', {}, {}, [], [])
+        await _translate_gemini_batch(*args)
+        await _translate_gemini_batch(*args, fast_mode=True)
+        full, fast = client.chat.completions.calls
+        self.assertLess(len(fast['messages'][0]['content']), len(full['messages'][0]['content']) / 2)
+        payload = json.loads(fast['messages'][1]['content'])
+        self.assertEqual(payload['required_ids'], [1])
+        self.assertEqual(payload['addressing_contract']['forbidden_personal_pronouns'], ['chàng', 'thiếp'])
+        self.assertIn('character_name_contract', payload)
+
     def test_target_idiom_typo_is_cleaned_without_changing_other_words(self) -> None:
         from app.services.ai.translation import _clean_polished_subtitle
         self.assertEqual(_clean_polished_subtitle('Gõ gan tày trời.', ''), 'To gan tày trời.')
