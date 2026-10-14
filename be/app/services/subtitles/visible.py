@@ -20,7 +20,7 @@ from app.services.subtitles.ass import write_srt
 from app.services.subtitles.timing import SubtitleEvent
 from app.services.subtitles.ocr import get_reader, read_lines, read_known_band, discover_regions, recognition_language, text_key
 
-ALGORITHM_VERSION = 13
+ALGORITHM_VERSION = 15
 
 _locks: dict[str, asyncio.Lock] = {}
 
@@ -50,6 +50,9 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
     if fps <= 0 or count <= 0:
         capture.release()
         return None
+    # A strong reading on one frame may anchor a caption that weaker frames
+    # miss. Image review must inspect these anchors before they can be used.
+    minimum_duration = .99 / fps if language == 'ch' and settings.translation_engine.lower() == 'gemini_web' else .08
     step = max(1, round(fps / 10))
     width, height = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)), int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
     try:
@@ -156,7 +159,10 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
             padding = max(16, round(detector_input.shape[0] * .5))
             detector_input = cv2.copyMakeBorder(detector_input, padding, padding, 0, 0,
                                                 cv2.BORDER_CONSTANT, value=127)
-        lines = read_lines(reader, detector_input, caption_region=True)
+        # Weak CJK font recognition must remain provisional until the actual
+        # image is checked. API-only translation retains the stricter threshold.
+        minimum = .40 if language == 'ch' and settings.translation_engine.lower() == 'gemini_web' else .60
+        lines = read_lines(reader, detector_input, minimum=minimum, caption_region=True)
         lines = [(x1, y1-padding, x2, y2-padding, text, confidence)
                  for x1, y1, x2, y2, text, confidence in lines
                  if y2 > padding and y1 < padding + stack.shape[0] * scale]
@@ -304,7 +310,7 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
         boundaries.append(count)
         events = [SubtitleEvent(timestamps[boundaries[i]], timestamps[endings[i]], text)
                   for i, text in enumerate(representatives)
-                  if text and timestamps[endings[i]] - timestamps[boundaries[i]] >= .08]
+                  if text and timestamps[endings[i]] - timestamps[boundaries[i]] >= minimum_duration]
         if not events:
             return None
         report = {
@@ -320,7 +326,7 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
                  'needs_review': sum(row[2] for row in observations[i]) / len(observations[i]) < .85
                     or Counter(text_key(row[1]) for row in observations[i]).most_common(1)[0][1] / len(observations[i]) < .65}
                 for i, text in enumerate(representatives)
-                if text and timestamps[endings[i]] - timestamps[boundaries[i]] >= .08
+                if text and timestamps[endings[i]] - timestamps[boundaries[i]] >= minimum_duration
             ],
         }
         report_path = output.parent / 'subtitles.recognition.json'
@@ -368,6 +374,7 @@ async def visible_source_subtitles(work_dir: Path, on_progress: Callable[[str], 
     stamp = source.stat()
     fingerprint = {'size': stamp.st_size, 'mtime_ns': stamp.st_mtime_ns,
                    'version': ALGORITHM_VERSION, 'language': recognition_language(work_dir),
+                   'uncertain_caption_review': settings.translation_engine.lower() == 'gemini_web',
                    'engines': [asr_cache.package_version('rapidocr'), asr_cache.package_version('vietocr')]}
     reference = work_dir / 'subtitles.source.srt'
     fingerprint['reference'] = await asyncio.to_thread(asr_cache.digest, reference) if reference.is_file() else ''
@@ -399,6 +406,7 @@ async def visible_source_subtitles(work_dir: Path, on_progress: Callable[[str], 
             key = hashlib.sha256(json.dumps({
                 'video': asr_cache.digest(source), 'version': ALGORITHM_VERSION,
                 'language': fingerprint['language'], 'reference': fingerprint['reference'],
+                'uncertain_caption_review': fingerprint['uncertain_caption_review'],
                 'engines': fingerprint['engines'],
             }, sort_keys=True).encode()).hexdigest()
             return Path(settings.storage_dir) / 'recognition-cache' / 'visible' / key

@@ -36,6 +36,10 @@ def _validated_target(target: Path, work_dir: Path, source_video: Path | None) -
         if (source_video is not None and (work_dir / 'subtitles.recognition.json').is_file()
                 and marker.get('recognition_version') != ALGORITHM_VERSION):
             return False
+        if (work_dir / 'subtitles.vision-review.json').is_file():
+            from app.services.subtitles.vision_review import VERSION
+            if marker.get('vision_review_version') != VERSION:
+                return False
         return (marker.get('policy') == TRANSLATION_POLICY_VERSION
                 and marker.get('review_completed') is True
                 and marker.get('engine') == settings.translation_engine
@@ -250,14 +254,20 @@ async def _prepare_target_subtitles(
     translation_progress_end: int = 69,
     on_measurement: Callable[[float, float], None] | None = None,
 ) -> Path:
+    from app.services.ai.gemini_web import browser, GeminiWebVerificationRequired
+    verification_required = False
     try:
-        return await _prepare_target_subtitles_impl(
-            subtitle_file, work_dir, source_language, progress, source_video,
-            processing_mode, translation_progress_start, translation_progress_end,
-            on_measurement=on_measurement,
-        )
+        with browser.conversation(f'translation:{work_dir.resolve()}:policy:{TRANSLATION_POLICY_VERSION}'):
+            return await _prepare_target_subtitles_impl(
+                subtitle_file, work_dir, source_language, progress, source_video,
+                processing_mode, translation_progress_start, translation_progress_end,
+                on_measurement=on_measurement,
+            )
+    except GeminiWebVerificationRequired:
+        verification_required = True
+        raise
     finally:
-        if settings.translation_engine.lower() == 'gemini_web':
+        if settings.translation_engine.lower() == 'gemini_web' and not verification_required:
             from app.services.ai.gemini_web import browser
             try:
                 await browser.close()
@@ -378,8 +388,10 @@ async def _prepare_target_subtitles_impl(
     target = write_srt(translated_events, work_dir / f"subtitles.{target_language}.srt")
     from app.services.ai.asr_cache import digest
     pending = work_dir / 'translation_quality.pending.json'
+    from app.services.subtitles.vision_review import VERSION as VISION_REVIEW_VERSION
     pending.write_text(json.dumps({'policy': TRANSLATION_POLICY_VERSION,
         'recognition_version': ALGORITHM_VERSION if visible_file else None,
+        'vision_review_version': VISION_REVIEW_VERSION if (work_dir / 'subtitles.vision-review.json').is_file() else None,
         'engine': settings.translation_engine,
         'model': 'Gemini Web' if settings.translation_engine == 'gemini_web' else settings.ai_model,
         'video': _quality_signature(source_video), 'sha256': digest(target),

@@ -12,7 +12,7 @@ from openai import AsyncOpenAI
 from app.core import settings
 from app.services.subtitles.timing import SubtitleEvent
 
-CONTEXT_VERSION = 4
+CONTEXT_VERSION = 5
 
 _CONTEXT_PROMPT = (
     "Lập hồ sơ ngữ cảnh để dịch phụ đề phim từ transcript nguồn và ảnh theo thứ tự thời gian. "
@@ -31,6 +31,9 @@ _CONTEXT_PROMPT = (
     "- relationships: chỉ ghi quan hệ được lời nguồn xác nhận; ở cùng giường hoặc chăm sóc không chứng minh vợ chồng.\n"
     "- honorific_rules: xưng hô theo người nói/người nghe và bối cảnh; với cổ trang thường ta/ngươi, "
     "vương gia/thuộc hạ, mẫu phi/con. Không trộn tao/mày vào thoại cung đình nếu nguồn không cần sắc thái đó.\n"
+    "- Không suy ra cách gọi tình cảm chàng/thiếp chỉ từ cảnh lo lắng, mang thuốc hay ở cùng phòng. "
+    "Khi chưa có bằng chứng về quan hệ hoặc cách gọi trong lời nguồn, dùng ta/ngươi; "
+    "tước vị là cách xưng hô, không phải alias tên riêng để thay bằng tên/mô tả ngoại hình.\n"
     "- scene_notes: phân biệt hồi ức/hiện tại, độc thoại nội tâm/lời nói ngoài miệng khi có bằng chứng; "
     "ghi ID câu nguồn làm bằng chứng. Nội tâm bực bội và lời đáp cung kính có thể cùng đúng.\n"
     "- glossary: giải nghĩa thành ngữ, ẩn dụ và thuật ngữ khó trong NGỮ CẢNH; giữ hình ảnh quan trọng "
@@ -79,22 +82,63 @@ async def analyze_video_context(
 
     transcript = _compact_transcript(events)
     if use_browser:
-        from app.services.ai.gemini_web import browser
+        from app.services.ai.gemini_web import GeminiWebError, GeminiWebRefusal, GeminiWebTimeout, GeminiWebVerificationRequired, browser
         sheet = work_dir / 'context-frames.jpg'
         attached = await asyncio.to_thread(_context_frame_sheet, video_file, sheet)
         payload = {'current_items': [{'id': 1, 'source': 'Tóm tắt ngữ cảnh có bằng chứng của clip này.'}],
                    'source_transcript': transcript, 'verified_caption_hints': verified_context or {}}
         # Keep the browser's request nonce and item validation contract; the
         # structured character/plot bible travels in memory_updates.
-        raw = await browser.complete([
+        messages = [
             {'role': 'system', 'content': _CONTEXT_PROMPT + '\nĐặt hồ sơ trong memory_updates. '
              'items chỉ gồm id=1, text=tóm tắt ngắn bằng tiếng Việt. Không dịch từng câu ở bước này.'},
             {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)},
-        ], timeout=180, attachments=[sheet] if attached else None)
+        ]
+        for attempt in range(2):
+            try:
+                request_messages = messages
+                if attempt and attached:
+                    request_messages = [
+                        {'role': 'system', 'content':
+                         'Đọc transcript nguồn để hỗ trợ dịch phụ đề. Không có ảnh cảnh trong lượt này. '
+                         'Chỉ ghi sự kiện và quan hệ có trong lời nguồn, không suy đoán người nói hoặc ngoại hình. '
+                         'Trả JSON items gồm id=1, text=tóm tắt tiếng Việt tối đa 400 ký tự; '
+                         'memory_updates chỉ cần plot_summary, characters (chỉ tên được gọi rõ trong nguồn, '
+                         'name tiếng Việt và aliases chữ gốc), glossary và translation_notes. '
+                         'Tên được gọi không chứng minh đó là người nói; NPC là thuật ngữ, không phải tên người. '
+                         'Không suy ra chàng/thiếp hay vợ chồng từ việc cứu hoặc bảo vệ nhau. '
+                         'Không cần film_title, scene_notes hay một hồ sơ dài.'},
+                        messages[1], {'role': 'user', 'content':
+                        'Lần này không có ảnh cảnh. Chỉ dùng transcript và verified_caption_hints đã kiểm tra; '
+                        'không mô tả ngoại hình, hành động không được lời thoại xác nhận hoặc suy đoán người nói. '
+                        'Ghi rõ trong translation_notes: chưa kiểm tra được ảnh cảnh.'}]
+                raw = await browser.complete(request_messages, timeout=180,
+                    attachments=[sheet] if attached and not attempt else None)
+                break
+            except GeminiWebVerificationRequired:
+                raise
+            except GeminiWebRefusal:
+                # A scene image request can fail while ordinary transcript
+                # analysis still works. One different, text-only task is
+                # allowed; never replay a refused text request or claim its
+                # images were read. Browser refusal already resets the chat.
+                if attempt or not attached:
+                    raise
+                print('[Context] Gemini refused scene images; using one transcript-only context request.', flush=True)
+            except GeminiWebError as exc:
+                if attempt or (isinstance(exc, GeminiWebTimeout) and not attached):
+                    raise
+                print('[Context] Gemini failed; retrying from transcript and verified caption hints, keeping OCR.', flush=True)
         data = _loads_json_object(raw)
         if not isinstance(data, dict) or not isinstance(data.get('memory_updates'), dict):
             raise RuntimeError('Gemini chưa trả hồ sơ ngữ cảnh hợp lệ. Phụ đề nguồn đã được giữ để chạy tiếp.')
         context = _sanitize_context(data['memory_updates'], transcript)
+        if attempt and attached:
+            notes = context.get('translation_notes', [])
+            notes = notes if isinstance(notes, list) else [notes]
+            context['translation_notes'] = [*notes,
+                'Ảnh cảnh chưa được kiểm tra ở bước ngữ cảnh; chỉ có transcript và chữ đã xác minh. '
+                'Không suy đoán người nói, quan hệ hoặc ngoại hình từ ảnh chưa đọc.']
         if not isinstance(context.get('plot_summary'), str) or not context['plot_summary'].strip():
             items = data.get('items', [])
             if (isinstance(items, list) and len(items) == 1 and isinstance(items[0], dict)
@@ -293,4 +337,20 @@ def _sanitize_context(data: object, transcript: str = "") -> dict:
         "translation_notes",
         "confidence",
     }
-    return {key: data.get(key) for key in allowed if data.get(key) not in (None, "", [], {})}
+    cleaned = {key: data.get(key) for key in allowed if data.get(key) not in (None, "", [], {})}
+    rules = cleaned.get('honorific_rules')
+    if isinstance(rules, list):
+        result = []
+        for item in rules:
+            field = 'rule' if isinstance(item, dict) and item.get('rule') else 'style'
+            rule = item.get(field, '') if isinstance(item, dict) else item
+            if (isinstance(rule, str) and re.search(r'\b(chàng|thiếp)\b', rule, re.I)
+                    and re.search(r'có thể|tùy|có lẽ|hoặc|chưa rõ|chưa xác nhận', rule, re.I)):
+                neutral = ('Quan hệ/cách gọi tình cảm chưa được xác nhận; dùng ta/ngươi, '
+                           'người nam có thể gọi người nữ đã xác định rõ là nàng. '
+                           'Giữ tên và tước vị trong lời nguồn; không tự chọn chàng/thiếp.')
+                result.append({**item, field: neutral} if isinstance(item, dict) else neutral)
+            else:
+                result.append(item)
+        cleaned['honorific_rules'] = result
+    return cleaned

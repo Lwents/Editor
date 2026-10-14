@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from app.core import settings
+from app.services.ai.gemini_web import GeminiWebRefusal, GeminiWebTimeout, GeminiWebVerificationRequired
 from app.services.ai.character_names import build_character_name_registry, canonicalize_character_text
 from app.services.ai.translation import (
     TRANSLATION_POLICY_VERSION, TranslationError, _ai_translation_batch_ranges,
@@ -24,7 +25,8 @@ async def review_translated_events(source, draft, context, work_dir: Path, sourc
         raise TranslationError('Bản dịch không khớp số câu/thời gian nguồn để đối chiếu.')
     if not source or target_language.lower() != 'vi':
         return draft
-    profile = get_processing_profile(processing_mode)
+    from app.services.ai.translation import get_translation_profile
+    profile = get_translation_profile(processing_mode)
     fingerprint = hashlib.sha256(json.dumps({
         'version': TRANSLATION_POLICY_VERSION,
         'source': [(e.start, e.end, e.text) for e in source],
@@ -35,9 +37,12 @@ async def review_translated_events(source, draft, context, work_dir: Path, sourc
         'mode': profile.name,
     }, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
     path = work_dir / 'translation_review_checkpoint.json'
+    review_items = 40 if profile.name == 'quality' else 80
+    if settings.translation_engine.lower() == 'gemini_web':
+        review_items = min(review_items, profile.translation_batch_items)
     ranges = _ai_translation_batch_ranges(
         [json.dumps([a.text, b.text], ensure_ascii=False) for a, b in zip(source, draft)],
-        max_items=40 if profile.name == 'quality' else 80, max_chars=12000)
+        max_items=review_items, max_chars=12000)
     texts = []
     memory = _initial_translation_memory(context)
     try:
@@ -73,9 +78,11 @@ async def review_translated_events(source, draft, context, work_dir: Path, sourc
                 retries=profile.translation_retries,
                 request_timeout_seconds=max(120, profile.translation_request_timeout_seconds),
                 review_mode=True)
+        except (GeminiWebVerificationRequired, GeminiWebRefusal, GeminiWebTimeout):
+            raise
         except Exception as exc:
             raise TranslationError(f'Đối chiếu bản dịch chưa hoàn tất ({completed}/{len(ranges)} batch). '
-                                   'Bản dịch và checkpoint đã được giữ để chạy tiếp.') from exc
+                                   f'Bản dịch và checkpoint đã được giữ để chạy tiếp. Chi tiết: {exc}') from exc
         texts.extend(canonicalize_character_text(t, registry) for t in reviewed)
         _merge_translation_memory(memory, updates)
         pending = path.with_suffix('.pending.json')
@@ -88,4 +95,7 @@ async def review_translated_events(source, draft, context, work_dir: Path, sourc
         completed = index
         if on_progress:
             on_progress(completed, len(ranges))
-    return [SubtitleEvent(e.start, e.end, texts[i]) for i, e in enumerate(source)]
+    from app.services.ai.translation import _clean_polished_subtitle
+    return [SubtitleEvent(e.start, e.end,
+                          canonicalize_character_text(_clean_polished_subtitle(texts[i], ''), registry))
+            for i, e in enumerate(source)]

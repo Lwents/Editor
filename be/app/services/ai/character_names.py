@@ -8,6 +8,10 @@ from difflib import SequenceMatcher
 
 CharacterNameRegistry = dict[str, str]
 
+# Preferred spellings established by the series calibration clips. Apply
+# only to complete source names supported by the context, not ordinary prose.
+_CALIBRATED_SOURCE_NAMES = {'绾绾': 'Oản Oản', '箫池': 'Tiêu Trì', '萧池': 'Tiêu Trì'}
+
 
 # Vietnamese audiences commonly know this character as "Chaien".  Models
 # alternate between Japanese romanisations even inside one response, so keep a
@@ -56,12 +60,39 @@ _ADDRESS_ALIASES = {
     "王爷", "殿下", "陛下", "皇上", "母妃", "父皇", "公子", "大人",
     "vương gia", "điện hạ", "bệ hạ", "hoàng thượng", "mẫu phi", "phụ hoàng",
     "công tử", "đại nhân", "thuộc hạ", "mẹ", "cha", "con", "huynh", "tỷ",
+    "娘娘", "太后", "皇后", "皇妃", "贵妃", "夫人", "小姐", "少爷", "将军",
+    "殿下", "皇兄", "皇姐", "母后", "父王", "母亲", "父亲", "哥哥", "姐姐",
+    "nương nương", "thái hậu", "hoàng hậu", "hoàng phi", "quý phi", "phu nhân",
+    "tiểu thư", "thiếu gia", "tướng quân", "hoàng huynh", "hoàng tỷ", "mẫu hậu",
+    "phụ vương", "mẫu thân", "phụ thân",
+    "摄政王", "王妃", "主子", "主人", "太子", "皇叔", "皇子", "公主",
+    "nhiếp chính vương", "vương phi", "chủ tử", "chủ nhân", "thái tử", "hoàng thúc",
+    "hoàng tử", "công chúa", "npc",
+    "ta", "tôi", "ngươi", "các ngươi", "hắn", "nàng", "chàng", "thiếp",
+    "anh ta", "anh ấy", "cô ta", "cô ấy", "phu quân", "nương tử", "tướng công",
+    "vợ", "chồng", "con trai", "con gái", "nữ phản diện số một", "nam phản diện số một",
+    "diêm vương sống", "夫君", "娘子", "相公", "妻子", "丈夫", "儿子", "女儿",
+    "thái y", "太医", "bác sĩ", "医生", "thích khách", "thị vệ", "tỳ nữ", "cấm quân", "禁军",
+    "妖女", "妖后", "yêu nữ", "yêu hậu",
 }
 
 
 def _is_address_alias(value: str) -> bool:
     return (value.casefold() in _ADDRESS_ALIASES
-            or value.endswith("儿") or value.casefold().endswith(" nhi"))
+            or value.endswith("儿") or value.casefold().endswith(" nhi")
+            or value in {'女反一', '男反一', '女主', '男主', '反派', '刺客', '侍卫', '侍女'}
+            or bool(re.fullmatch(r'[\u3400-\u9fff]+', value) and value.endswith(
+                ('王', '帝', '皇', '太后', '皇后', '妃', '公主', '太子', '将军', '大人', '殿下', '宗主', '教主',
+                 '小姐', '少爷', '夫人', '妖女', '妖后')))
+            or '余孽' in value or value.casefold().startswith(('tàn dư ', 'dư nghiệt ')))
+
+
+def _is_character_description(value: str) -> bool:
+    """A neutral scene label is not a verified proper name or faction name."""
+    return bool(re.match(
+        r'^(?:nhóm|đám|nam tử|nữ tử|nam nhân|nữ nhân|người|cô gái|thiếu nữ|chàng trai|'
+        r'thích khách|thị vệ|tỳ nữ|hộ vệ|tên lính|tên thích khách|tên sát thủ|nhân vật|unknown|unnamed|woman|man in)(?:\s|$)',
+        value.casefold())) or value in {'黑衣人', '白衣女子', '黑衣男子', '刺客', '侍卫', '宫女', '太医'}
 
 _GLOSSARY_SOURCE_FIELDS = (
     "source",
@@ -249,7 +280,29 @@ def _register_name(
     aliases: Iterable[str],
 ) -> None:
     canonical = _clean_name(canonical)
-    if not canonical:
+    aliases = tuple(aliases)
+    if _is_character_description(canonical) or canonical.casefold() in _ADDRESS_ALIASES:
+        return
+    preferred = next((_CALIBRATED_SOURCE_NAMES[name] for raw in (canonical, *aliases)
+                      for name in _alias_values(raw) if name in _CALIBRATED_SOURCE_NAMES), None)
+    han_length = len(re.findall(r'[\u3400-\u9fff]', canonical))
+    name_length = han_length or len(canonical.split())
+    if preferred and (canonical in _CALIBRATED_SOURCE_NAMES or name_length <= len(preferred.split())):
+        aliases = (canonical, *aliases)
+        canonical = preferred
+    # Some context responses put the source spelling in `name` and the
+    # Vietnamese spelling in aliases. Never turn a translated name back into
+    # Chinese during deterministic cleanup.
+    if re.search(r'[\u3400-\u9fff]', canonical):
+        source_name = canonical
+        canonical = next((name for raw in aliases for name in _alias_values(raw)
+                          if not re.search(r'[\u3400-\u9fff]', name)
+                          and not _is_address_alias(name)
+                          and not _is_character_description(name)
+                          and (not preferred or len(name.split()) >= han_length)
+                          and re.fullmatch(r'[\w\s\-]+', name)), '')
+        aliases = (source_name, *aliases)
+    if not canonical or _is_character_description(canonical) or canonical.casefold() in _ADDRESS_ALIASES:
         return
     registry.setdefault(canonical, canonical)
     for raw_alias in aliases:
@@ -258,10 +311,14 @@ def _register_name(
                 continue
             if len(_name_key(alias).replace(" ", "")) < 2:
                 continue
-            registry.setdefault(alias, canonical)
+            # A source nickname is a valid shorter form; do not erase the
+            # surname of the full name or expand a nickname in every line.
+            target = _CALIBRATED_SOURCE_NAMES.get(alias, canonical)
+            registry.setdefault(target, target)
+            registry.setdefault(alias, target)
             folded = _ascii_name(alias)
             if folded != alias and len(folded.replace(" ", "")) >= 4:
-                registry.setdefault(folded, canonical)
+                registry.setdefault(folded, target)
 
 
 def _register_glossary_aliases(

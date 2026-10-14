@@ -66,19 +66,22 @@ def recognition_language(work_dir: Path) -> str:
 
 
 @lru_cache(maxsize=3)
-def get_reader(language: str):
+def get_reader(language: str, *, accurate: bool = False):
     from rapidocr import LangRec, ModelType, OCRVersion, RapidOCR
     reader = RapidOCR(params={
         'Global.model_root_dir': str(BACKEND_DIR / 'models' / 'ocr'),
         'Global.use_cls': False,
         'Global.log_level': 'error',
-        'Global.text_score': .55,
+        # Keep uncertain detector results available to the caller. Ordinary
+        # reads still require .60; Gemini image review can inspect weaker
+        # caption evidence rather than silently turning it into a blank gap.
+        'Global.text_score': .40,
         'Det.ocr_version': OCRVersion.PPOCRV5,
         'Det.model_type': ModelType.MOBILE,
         'Det.limit_type': 'max',
         'Det.limit_side_len': 1280,
         'Rec.ocr_version': OCRVersion.PPOCRV5,
-        'Rec.model_type': ModelType.MOBILE,
+        'Rec.model_type': ModelType.SERVER if accurate else ModelType.MOBILE,
         'Rec.lang_type': LangRec('latin' if language == 'vi' else language),
         'EngineConfig.onnxruntime.intra_op_num_threads': 4,
         'EngineConfig.onnxruntime.inter_op_num_threads': 1,

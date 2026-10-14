@@ -56,6 +56,95 @@ class _FakeClient:
 
 
 class GeminiTranslationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unsupported_romantic_address_is_rejected_before_checkpoint(self) -> None:
+        from unittest.mock import AsyncMock
+        from app.services.ai.translation import _translate_gemini_batch, TranslationBatchStructureError
+        reply = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(
+            {'items': [{'id': 1, 'text': 'Ta tin chàng.'}], 'memory_updates': {}}, ensure_ascii=False)))])
+        create = AsyncMock(return_value=reply)
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        with self.assertRaises(TranslationBatchStructureError):
+            await _translate_gemini_batch(client, [{'id': 1, 'source': '我相信你'}], 'zh', 'vi', {}, {}, [], [])
+        payload = json.loads(create.call_args.kwargs['messages'][1]['content'])
+        self.assertEqual(payload['addressing_contract']['forbidden_personal_pronouns'], ['chàng', 'thiếp'])
+        with self.assertRaises(TranslationBatchStructureError):
+            await _translate_gemini_batch(client, [{'id': 1, 'source': '我相信你'}], 'zh', 'vi', {}, {},
+                                         [{'id': 2, 'source': '绾绾这是要谋杀亲夫'}], [])
+        await _translate_gemini_batch(client, [{'id': 1, 'source': '我相信你夫君'}], 'zh', 'vi', {}, {}, [], [])
+
+    def test_passive_idiom_cleanup_does_not_insert_lam_twice(self) -> None:
+        from app.services.ai.translation import _clean_polished_subtitle
+        expected = 'Trì ca ca bị ngươi làm mê muội đầu óc.'
+        self.assertEqual(_clean_polished_subtitle('Trì ca ca bị ngươi mê muội đầu óc.', ''), expected)
+        self.assertEqual(_clean_polished_subtitle(expected, ''), expected)
+    def test_calibrated_nickname_does_not_remove_the_surname_or_insult(self) -> None:
+        registry = build_character_name_registry({'characters': [
+            {'name': 'Sở Oản Oản', 'aliases': ['楚绾绾', '绾绾', '妖女', '妖后', 'yêu nữ', 'yêu hậu']},
+        ]})
+        self.assertEqual(canonicalize_character_text('楚绾绾, 绾绾!', registry), 'Sở Oản Oản, Oản Oản!')
+        self.assertEqual(canonicalize_character_text('Sở Oản Oản là yêu hậu.', registry), 'Sở Oản Oản là yêu hậu.')
+    async def test_source_caption_is_not_changed_by_historical_asr_guesses(self) -> None:
+        client = _FakeClient()
+        events = [SubtitleEvent(0, 1, '我看不清'), SubtitleEvent(1, 2, '这是故事初期')]
+        with patch.object(settings, 'translation_engine', 'gemini'), \
+                patch.object(settings, 'ninerouter_api_key', 'test-key'), \
+                patch('openai.AsyncOpenAI', return_value=client):
+            await GeminiTranslation().translate_events(events, 'zh', 'vi')
+        payload = json.loads(client.chat.completions.calls[0]['messages'][1]['content'])
+        self.assertEqual([item['source'] for item in payload['current_items']], ['我看不清', '这是故事初期'])
+
+    def test_names_do_not_replace_pronouns_family_addresses_or_character_roles(self) -> None:
+        registry = build_character_name_registry({'characters': [
+            {'name': 'Tiêu Trì', 'aliases': ['hắn', 'phu quân', 'Diêm Vương sống']},
+            {'name': 'Oản Oản', 'aliases': ['nữ phản diện số một', 'nàng']},
+        ]})
+        text = 'hắn gọi nàng; phu quân, nữ phản diện số một và Diêm Vương sống.'
+        self.assertEqual(canonicalize_character_text(text, registry), text)
+
+    def test_gemini_web_batches_are_bounded_without_changing_api_profile(self) -> None:
+        from app.services.ai.translation import get_translation_profile
+        with patch.object(settings, 'translation_engine', 'gemini_web'):
+            self.assertEqual(get_translation_profile('balanced').translation_batch_items, 12)
+        with patch.object(settings, 'translation_engine', 'gemini'):
+            self.assertEqual(get_translation_profile('balanced').translation_batch_items, 28)
+
+    def test_target_idiom_typo_is_cleaned_without_changing_other_words(self) -> None:
+        from app.services.ai.translation import _clean_polished_subtitle
+        self.assertEqual(_clean_polished_subtitle('Gõ gan tày trời.', ''), 'To gan tày trời.')
+        self.assertEqual(_clean_polished_subtitle('Hắn gõ cửa.', ''), 'Hắn gõ cửa.')
+
+    def test_calibrated_source_names_do_not_change_spelling_between_clips(self) -> None:
+        registry = build_character_name_registry({'characters': [
+            {'name': 'Quản Quản', 'aliases': ['绾绾']},
+            {'name': 'Xiao Chi', 'aliases': ['箫池']},
+        ]})
+        self.assertEqual(canonicalize_character_text('Quản Quản gặp Xiao Chi.', registry), 'Oản Oản gặp Tiêu Trì.')
+
+    def test_tentative_style_field_is_sanitized_without_erasing_confirmed_rules(self) -> None:
+        result = _sanitize_context({'honorific_rules': [
+            {'speaker': 'Nam', 'style': 'chàng/nàng hoặc ta/nàng'},
+            {'speaker': 'Nữ', 'style': 'thiếp/chàng hoặc ta/ngươi (tùy sắc thái)'},
+        ]})
+        self.assertIn('dùng ta/ngươi', result['honorific_rules'][0]['style'])
+        self.assertIn('không tự chọn chàng/thiếp', result['honorific_rules'][1]['style'])
+
+    def test_source_name_does_not_replace_vietnamese_name_with_chinese(self) -> None:
+        registry = build_character_name_registry({'characters': [
+            {'name': '绾绾', 'aliases': ['Oản Oản', 'Wanwan']},
+            {'name': '未知', 'aliases': ['Nữ tử áo trắng']},
+        ]})
+        self.assertEqual(canonicalize_character_text('Oản Oản!', registry), 'Oản Oản!')
+        self.assertEqual(canonicalize_character_text('绾绾!', registry), 'Oản Oản!')
+        self.assertNotIn('未知', registry)
+
+    def test_tentative_romantic_address_is_not_used_as_evidence(self) -> None:
+        context = _sanitize_context({'honorific_rules': [
+            {'speaker': 'Nữ nhân', 'rule': "Có thể dùng chàng - thiếp hoặc ngươi - ta tùy mức độ thân mật."},
+            {'speaker': 'Vợ', 'rule': 'Lời nguồn xác nhận vợ chồng gọi chàng/thiếp.'},
+        ]})
+        self.assertIn('dùng ta/ngươi', context['honorific_rules'][0]['rule'])
+        self.assertEqual(context['honorific_rules'][1]['rule'], 'Lời nguồn xác nhận vợ chồng gọi chàng/thiếp.')
+
     def test_doraemon_names_are_canonical_without_corrupting_vietnamese_words(self) -> None:
         registry = build_character_name_registry(
             {

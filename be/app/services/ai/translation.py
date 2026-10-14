@@ -16,9 +16,11 @@ import time
 import unicodedata
 from collections import Counter
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 from app.core import settings
+from app.services.ai.gemini_web import GeminiWebRefusal, GeminiWebTimeout, GeminiWebVerificationRequired
 from app.models.job import ProcessingMode
 from app.services.ai.character_names import (
     build_character_name_registry,
@@ -40,7 +42,14 @@ class TranslationBatchStructureError(TranslationError):
         self.updates = updates or {}
 
 
-TRANSLATION_POLICY_VERSION = 5
+TRANSLATION_POLICY_VERSION = 22
+
+
+def get_translation_profile(processing_mode=None):
+    profile = get_processing_profile(processing_mode)
+    if settings.translation_engine.lower() == 'gemini_web':
+        return replace(profile, translation_batch_items=min(profile.translation_batch_items, 12))
+    return profile
 
 
 def create_translation_client():
@@ -122,10 +131,10 @@ class GeminiTranslation(TranslationEngine):
             raise TranslationError("Thiếu thư viện openai để gọi AI dịch phụ đề.") from exc
 
         client = create_translation_client()
-        profile = get_processing_profile(processing_mode)
+        profile = get_translation_profile(processing_mode)
         character_names = build_character_name_registry(context)
         source_texts = [
-            unicodedata.normalize("NFC", _normalize_source_text(event.text.strip()))
+            unicodedata.normalize("NFC", event.text.strip())
             for event in events
         ]
         ranges = _ai_translation_batch_ranges(
@@ -495,6 +504,19 @@ async def _translate_gemini_batch(
     request_timeout_seconds: float = 150,
     review_mode: bool = False,
 ) -> tuple[list[str], dict]:
+    source_window = ' '.join(str(item.get('source', ''))
+                             for item in [*previous_context, *batch, *next_context])
+    # A teasing accusation is a unilateral claim, not the other speaker's
+    # acceptance of a romantic address. Keep it in translation, but do not
+    # use it as evidence to force that address on neighbouring speakers.
+    address_evidence = source_window.replace('谋杀亲夫', '')
+    romantic_evidence = (not re.search(r'[\u3400-\u9fff]', source_window)
+                         or bool(re.search(r'夫君|相公|丈夫|妻子|夫妻|娘子|郎君|亲夫|成亲|妾', address_evidence)))
+    addressing_contract = {
+        'romantic_source_evidence': romantic_evidence,
+        'forbidden_personal_pronouns': [] if romantic_evidence else ['chàng', 'thiếp'],
+        'default': 'ta/ngươi; người nam có thể gọi người nữ rõ giới tính là nàng',
+    }
     system_prompt = (
         "Bạn là biên dịch viên phụ đề phim nhiều tập, chuyên giữ nhất quán nhân vật và ngữ cảnh. "
         "Hãy dịch TRỰC TIẾP từ ngôn ngữ nguồn sang tiếng Việt tự nhiên; không dùng bản dịch máy trung gian.\n\n"
@@ -506,6 +528,9 @@ async def _translate_gemini_batch(
         "Nếu là tên/logo/ký tự Latin không có nghĩa rõ ràng, giữ nguyên chữ đó; không tự xóa. "
         "Dịch cả câu rời ngữ cảnh; CHARACTER_BIBLE chỉ hướng dẫn xưng hô, không quyết định bỏ câu.\n"
         "- Giữ nguyên ý, không bịa tình tiết, không thêm tên người nói nếu câu nguồn không có.\n"
+        "- Câu nguồn bị cắt dở vẫn phải giữ đối tượng và sắc thái đã có: "
+        "饿死你个 có thể là 'Cho ngươi chết đói, đồ...' (lời mắng bị ngắt); "
+        "không rút thành 'Bỏ đói chết...' mất đối tượng 你 và không tự thêm phần chửi chưa có trong nguồn.\n"
         "- Đọc các CURRENT_ITEMS liền nhau như một câu liên tục để dịch câu bị chia: không thêm chủ thể hay danh từ mới ở mỗi mảnh. "
         "Ví dụ 太医院嘱咐的 / 药膳和补汤熬好了 phải nối nghĩa 'Theo lời dặn của Thái y viện / dược thiện và canh bổ đã nấu xong'; "
         "không dịch mảnh đầu thành 'Món theo lời dặn'. 熬汤 là nấu/hầm canh; không máy móc gọi mọi món là sắc thuốc.\n"
@@ -518,21 +543,58 @@ async def _translate_gemini_batch(
         "- Khẩu ngữ bực bội/độc thoại hài phải có nghĩa tương đương trong tiếng Việt: "
         "喂你个锤锤 là lời phản bác kiểu 'Đút cái con khỉ!', không phải hành động đút một cái búa. "
         "Không thêm meme, drama hoặc lời chửi ngoài mức độ câu nguồn.\n"
+        "- Phân biệt tính từ với mệnh lệnh khẩu ngữ: 老实点 khi yêu cầu ai ngồi yên/đừng quậy là 'ngoan ngoãn chút đi' hoặc 'yên nào', "
+        "không phải yêu cầu 'thành thật' thú nhận. 迷了心窍 là 'mê muội đầu óc' hoặc 'mê hoặc tâm trí', "
+        "không ghép từ thành 'mê hoặc muội'. 百废待兴 nói nhiều việc cần khôi phục sau biến động, "
+        "dịch đủ ý 'trăm việc đang chờ vực dậy', không chỉ 'trăm mối ngổn ngang'.\n"
         "- Chọn động từ tự nhiên theo hành động: 自己去领二十军棍 là 'Tự đi chịu hai mươi quân côn'. "
         "Giữ số lượng, người chịu phạt và mức độ mệnh lệnh; tránh bê nguyên cấu trúc Hán ngữ.\n"
         "- Xưng hô nhất quán với vai vế: thoại cung đình ta/ngươi, mẫu phi/con, vương gia/thuộc hạ; "
         "không tự đổi sang tao/mày. Giữ sắc thái giận dữ, mỉa mai và lời đe dọa của nguồn. "
+        "下死手 là 'ra tay hạ sát' hoặc 'ra tay chí mạng', phải giữ ý giết chết; "
+        "không làm nhẹ thành chỉ 'ra tay tàn độc'. "
         "Phân biệt nội tâm với lời đáp ngoài miệng; không gộp hoặc đảo ý hai loại lời này.\n"
+        "- Tước vị và cách gọi phải giữ đủ: 摄政王 là 'Nhiếp chính vương', không thay bằng tên người; "
+        "主子 là 'chủ tử' hoặc 'chủ nhân', không rút thành 'chủ...' làm mất cách gọi. "
+        "Nếu tên và tước vị cùng xuất hiện, giữ cả hai theo câu nguồn.\n"
         "- Đại từ 他 phải phù hợp thái độ người nói; không mặc định dịch thành 'người' mang sắc thái kính trọng "
         "khi người nói đang oán trách kẻ lợi dụng, hại gia đình mình.\n"
+        "他都说了 dùng 都 để nhấn mạnh 'hắn cũng đã nói' hoặc 'ngay cả hắn cũng nói', "
+        "không dịch thành 'hắn đều nói' như chủ thể số nhiều.\n"
         "- CHARACTER_NAME_CONTRACT là bắt buộc: khi nhắc nhân vật phải chép đúng canonical_names, không dịch nghĩa tên riêng, "
         "không dùng alias tên riêng và không đổi tên giữa các batch. "
         "Giữ cách gọi trong câu nguồn: 王爷 là Vương gia, 池儿 là Trì nhi; "
         "không thay tước vị, cách gọi thân mật hay quan hệ bằng tên đầy đủ của nhân vật.\n"
+        "Tên đầy đủ có họ phải giữ đủ họ; tên gọi tắt không tự thêm họ. "
+        "Khi nhiều alias của cùng nhân vật cùng khớp chữ nguồn, ưu tiên alias dài nhất có mặt trong câu. "
+        "Ví dụ 楚绾绾 là Sở Oản Oản, còn 绾绾 là Oản Oản. "
+        "妖女/yêu nữ và 妖后/yêu hậu là lời công kích hoặc cách gọi, không thay bằng tên riêng.\n"
+        "- 娘娘 là nương nương, không thay bằng mô tả 'nữ tử áo trắng' hay tên người trong hồ sơ. "
+        "启禀 là 'Bẩm' hoặc 'Khải bẩm', không viết 'Khởi bẩm'. "
+        "Không tự dùng chàng/thiếp chỉ vì nhân vật chăm sóc hoặc lo cho nhau; "
+        "khi chưa có bằng chứng rõ về cách xưng hô tình cảm, giữ ta/ngươi.\n"
+        "Các gợi ý 'có thể', 'tùy mức độ thân mật' trong hồ sơ KHÔNG phải bằng chứng. "
+        "Nếu hồ sơ đưa nhiều phương án xưng hô, dùng phương án trung tính ta/ngươi; "
+        "không chọn chàng/thiếp từ hình ảnh chăm sóc hay cách gọi chung Vương gia, nương nương.\n"
+        "- 他/她 trong độc thoại là đại từ ngôi thứ ba, không phải cách xưng hô người yêu. "
+        "Khi nguồn chỉ xác nhận người quen/đồng đội, dùng hắn/anh ấy/cô ấy phù hợp thái độ; "
+        "không gọi 'chàng' chỉ vì lo người đó bị giết. Quan hệ tình cảm phải có lời nguồn xác nhận rõ.\n"
+        "Lời tự xưng 親夫/亲夫 mang tính trêu chọc của một người không xác nhận người kia đã chấp nhận quan hệ đó. "
+        "Khi kể hoặc khoe với người thứ ba bằng 他, giữ đại từ ngôi thứ ba phù hợp giọng nói (hắn/anh ấy), "
+        "không tự đổi sang chàng vì trước đó có lời trêu 'mưu sát phu quân'.\n"
         "- Chỉ xác định giới tính, vai vế hoặc quan hệ khi câu nguồn/ngữ cảnh có bằng chứng; chưa chắc thì dùng cách gọi trung tính.\n"
+        "- ADDRESSING_CONTRACT ưu tiên trước hồ sơ và MEMORY. Khi forbidden_personal_pronouns không rỗng, "
+        "không được dùng các đại từ đó trong items. Cảnh ôm, chăm sóc và lời tin tưởng không xác nhận hôn nhân. "
+        "Người nữ gọi người nam bằng 你 thì dùng ngươi; người nam gọi người nữ có thể dùng nàng. "
+        "Trong lượt đối chiếu phải sửa cả draft vi phạm hợp đồng này.\n"
         "- PREVIOUS_CONTEXT và NEXT_CONTEXT chỉ giúp hiểu đại từ/người nói; tuyệt đối không dịch chúng vào items.\n"
         "- Với câu rút gọn hoặc đại từ hồi chỉ, khôi phục đúng hành động/đối tượng đã nêu ở câu trước khi tiếng Việt cần để rõ nghĩa; không đổi chủ thể và không thêm thông tin ngoài nguồn.\n"
         "- Câu ngắn, tự nhiên, phù hợp thời lượng phụ đề/lồng tiếng; không để sót chữ Trung, pinyin hoặc chú thích.\n"
+        "- Kiểm tra lại trật tự và ngữ pháp tiếng Việt: 心甘情愿 là 'cam tâm tình nguyện' hoặc 'tự nguyện', "
+        "không đảo thành 'tâm cam tình nguyện'. 真当...是... là 'coi ... là ...'; "
+        "khi nói ai làm bằng đất nặn, dùng 'coi ... là đất nặn' hoặc 'tưởng ... được nặn bằng đất', "
+        "không viết 'coi ... làm bằng đất' thiếu quan hệ ngữ pháp.\n"
+        "- Khi nguồn có NPC, giữ nguyên NPC; không thay bằng tên nhãn nhân vật như 'Tên lính áp giải'.\n"
         "- memory_updates chỉ ghi thông tin nhân vật mới được CURRENT_ITEMS xác nhận, gồm characters, relationships, glossary, addressing_rules.\n"
     )
     if review_mode:
@@ -550,6 +612,7 @@ async def _translate_gemini_batch(
         "source_language": source_language,
         "target_language": target_language,
         "character_bible": _compact_context(context),
+        "addressing_contract": addressing_contract,
         "character_name_contract": character_name_contract(
             build_character_name_registry(context)
         ),
@@ -603,6 +666,15 @@ async def _translate_gemini_batch(
             updates=data.get('memory_updates') if isinstance(data.get('memory_updates'), dict) else {},
         )
     translated = [by_id[item_id] for item_id in expected_ids]
+    if target_language.lower() == 'vi' and not romantic_evidence:
+        invalid = [item_id for item_id in expected_ids
+                   if re.search(r'\b(?:chàng(?!\s+trai\b)|thiếp)\b', by_id[item_id], re.I)]
+        if invalid:
+            raise TranslationBatchStructureError(
+                f'AI dùng xưng hô tình cảm chưa có bằng chứng nguồn ở ID {invalid}; dùng ta/ngươi theo ADDRESSING_CONTRACT.',
+                valid_items={item_id: text for item_id, text in by_id.items() if item_id not in invalid},
+                updates=data.get('memory_updates') if isinstance(data.get('memory_updates'), dict) else {},
+            )
     if target_language.lower() == "vi" and any(_looks_chinese(text) for text in translated):
         raise TranslationError("AI còn để sót chữ Trung trong batch dịch.")
     updates = data.get("memory_updates")
@@ -670,6 +742,8 @@ async def _translate_gemini_batch_with_retries(
                     _merge_translation_memory(updated_memory, chunk_updates)
                 return [recovered[int(item['id'])] for item in batch], combined_updates
             last_error = exc
+        except (GeminiWebVerificationRequired, GeminiWebRefusal, GeminiWebTimeout):
+            raise
         except TimeoutError as exc:
             last_error = TranslationError(
                 f"9router không phản hồi trong {int(request_timeout_seconds)} giây"
@@ -900,6 +974,12 @@ def _clean_polished_subtitle(text: str, fallback: str) -> str:
     cleaned = cleaned.replace("\\N", " ")
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" \t\n\"'")
     cleaned = re.sub(r"\.{4,}", "...", cleaned)
+    # Conservative correction of a malformed idiom observed in AI output.
+    # Do not run the broad historical ASR substitutions on source captions.
+    cleaned = re.sub(r'\bGõ gan tày trời\b', 'To gan tày trời', cleaned)
+    cleaned = re.sub(r'\bgõ gan tày trời\b', 'to gan tày trời', cleaned)
+    cleaned = cleaned.replace('bị ngươi mê muội đầu óc', 'bị ngươi làm mê muội đầu óc')
+    cleaned = cleaned.replace('Bị ngươi mê muội đầu óc', 'Bị ngươi làm mê muội đầu óc')
     cleaned = re.sub(r"\s+([.,!?:;])", r"\1", cleaned)
     cleaned = re.sub(r",([^\s\d])", r", \1", cleaned)
     if not cleaned or _looks_chinese(cleaned):
