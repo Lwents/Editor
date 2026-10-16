@@ -21,10 +21,100 @@ from urllib.request import urlopen
 from urllib.parse import urlsplit
 
 from app.core import settings
+from app.services.ai.gemini_models import active_model_policy, model_policy, select_model, ModelSelectionError
 
 
 class GeminiWebError(RuntimeError):
     pass
+
+
+class GeminiSessionBusy(GeminiWebError):
+    pass
+
+
+class WebConversationLimit(GeminiWebError):
+    """The provider explicitly rejected this conversation's context length."""
+
+
+class GeminiWebModelError(GeminiWebError):
+    """A missing/mismatched model needs a user action, not prompt retries."""
+
+
+class GeminiWebMalformedReply(GeminiWebError):
+    def __init__(self, message, partial=None):
+        super().__init__(message)
+        self.partial = partial
+
+
+def _escape_text_quotes(text: str) -> str:
+    """Repair raw quotes only inside text values with an item boundary.
+
+    Never add words, close truncated items, or change identifiers. The result
+    still has to decode as JSON and match the exact request ID.
+    """
+    pattern = re.compile(r'("text"\s*:\s*")(.*?)("\s*}\s*(?=,\s*{\s*"id"\s*:|]\s*[,}]))', re.S)
+    def replace(match):
+        value, backslashes, result = match[2], 0, []
+        for char in value:
+            if char == '"' and backslashes % 2 == 0:
+                result.append('\\')
+            if ord(char) < 32:
+                result.append(json.dumps(char)[1:-1])
+            else:
+                result.append(char)
+            backslashes = backslashes + 1 if char == '\\' else 0
+        return match[1] + ''.join(result) + match[3]
+    return pattern.sub(replace, text)
+
+
+def parse_partial_reply(text: str, request_id: str) -> dict | None:
+    """Recover only fully decoded leading items under an exact request ID."""
+    decoder = json.JSONDecoder()
+    for start in re.finditer(r'\{', text):
+        offset, nonce = start.end(), None
+        try:
+            while True:
+                offset += len(text[offset:]) - len(text[offset:].lstrip())
+                key, consumed = decoder.raw_decode(text[offset:])
+                offset += consumed
+                offset += len(text[offset:]) - len(text[offset:].lstrip())
+                if text[offset:offset+1] != ':':
+                    break
+                offset += 1
+                offset += len(text[offset:]) - len(text[offset:].lstrip())
+                if key == 'items':
+                    if nonce != request_id or text[offset:offset+1] != '[':
+                        break
+                    offset += 1
+                    items = []
+                    while True:
+                        offset += len(text[offset:]) - len(text[offset:].lstrip())
+                        try:
+                            item, consumed = decoder.raw_decode(text[offset:])
+                        except ValueError:
+                            break
+                        if not isinstance(item, dict):
+                            break
+                        items.append(item)
+                        offset += consumed
+                        offset += len(text[offset:]) - len(text[offset:].lstrip())
+                        if text[offset:offset+1] != ',':
+                            break
+                        offset += 1
+                    if items:
+                        return {'request_id': request_id, 'items': items, 'memory_updates': {}}
+                    break
+                value, consumed = decoder.raw_decode(text[offset:])
+                if key == 'request_id':
+                    nonce = value
+                offset += consumed
+                offset += len(text[offset:]) - len(text[offset:].lstrip())
+                if text[offset:offset+1] != ',':
+                    break
+                offset += 1
+        except (ValueError, IndexError):
+            pass
+    return None
 
 
 class GeminiWebRefusal(GeminiWebError):
@@ -51,11 +141,18 @@ class GeminiWebTimeout(GeminiWebError):
     """Do not replay an expensive request automatically after its deadline."""
 
 
+def response_wait_limits(timeout):
+    """No-progress timeout plus a bounded allowance for an active stream."""
+    idle = min(max(timeout, 30), 300)
+    return idle, min(idle * 3, 900)
+
+
 class GeminiWebVerificationRequired(GeminiWebError):
     """Google requires a person to verify the browser session."""
 
 
 _conversation_scope = ContextVar('gemini_conversation_scope', default=None)
+_wait_callback = ContextVar('gemini_wait_callback',default=None)
 
 
 def profile_directory() -> Path:
@@ -64,9 +161,9 @@ def profile_directory() -> Path:
 
 
 @contextmanager
-def session_lock():
+def session_lock(profile=None):
     """Serialize sends even if web and desktop backends share this session."""
-    profile = profile_directory()
+    profile = profile or profile_directory()
     profile.mkdir(parents=True, exist_ok=True)
     with (profile / 'translation.lock').open('a+b') as stream:
         stream.write(b'0')
@@ -80,7 +177,7 @@ def session_lock():
                 import fcntl
                 fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
-            raise GeminiWebError('Phiên Gemini đang dịch cho tác vụ khác. Đợi hoàn tất rồi thử lại.') from None
+            raise GeminiSessionBusy('Phiên Gemini đang dịch cho tác vụ khác. Đang chờ đến lượt.') from None
         try:
             yield
         finally:
@@ -98,13 +195,56 @@ def parse_reply(text: str, request_id: str) -> dict | None:
         try:
             data, _ = decoder.raw_decode(text[match.start():])
         except ValueError:
-            continue
+            repaired = _escape_text_quotes(text[match.start():])
+            if repaired == text[match.start():]:
+                continue
+            try:
+                data, _ = decoder.raw_decode(repaired)
+            except ValueError:
+                continue
         if isinstance(data, dict) and data.get('request_id') == request_id and isinstance(data.get('items'), list):
             return data
     return None
 
 
 class GeminiBrowser:
+    provider_label = 'Gemini'
+    home_url = 'https://gemini.google.com/app'
+    host = 'gemini.google.com'
+    chat_pattern = r'https://gemini\.google\.com/app/[A-Za-z0-9_-]+'
+    response_selector = 'model-response'
+    query_selector = 'user-query'
+    stop_selector = 'button[aria-label*="Stop"], button[aria-label*="Dừng"], button[aria-label*="Ngừng"], button.stop-button'
+
+    @staticmethod
+    def profile_directory():
+        return profile_directory()
+
+    def _policy(self, mode):
+        from .gemini_models import POLICIES
+        from app.services.presets import get_processing_profile
+        return POLICIES[get_processing_profile(mode).name]
+
+    def _select_model(self, page, policy):
+        return select_model(page, policy)
+
+    def _before_send(self, page, prompt, conversation, cancelled, policy):
+        pass
+
+    def _on_sent(self, page, prompt, conversation):
+        pass
+
+    def _generation_activity(self, page, request_id):
+        stop = page.locator(self.stop_selector)
+        generating = any(stop.nth(i).is_visible() for i in range(stop.count()))
+        queries = page.locator(self.query_selector)
+        current = bool(generating and queries.count() and queries.last.evaluate(
+            '(element, nonce) => element.textContent.includes(nonce)', request_id))
+        return {'generating': generating, 'current_request': current}
+
+    def _response_belongs(self, response, request_id):
+        return response.evaluate('(element, data) => { const queries = document.querySelectorAll(data.selector); const query = queries[queries.length - 1]; return !!query && query.textContent.includes(data.id) && !!(query.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING); }', {'selector': self.query_selector, 'id': request_id})
+
     def __init__(self):
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='gemini-web')
         self._gate = asyncio.Lock()
@@ -115,27 +255,32 @@ class GeminiBrowser:
         self._hidden = False
         self._window_bounds = None
         self._active_conversation = None
+        self._delivered_requests=set()
 
     @contextmanager
-    def conversation(self, scope=None):
-        token = _conversation_scope.set(hashlib.sha256(str(scope or uuid.uuid4()).encode()).hexdigest())
+    def conversation(self, scope=None, processing_mode=None, on_wait=None):
+        policy = self._policy(processing_mode)
+        model_token = active_model_policy.set(policy)
+        wait_token = _wait_callback.set(on_wait)
+        token = _conversation_scope.set(hashlib.sha256(f'{scope or uuid.uuid4()}:{policy.cache_key}'.encode()).hexdigest())
         try:
             yield
         finally:
             _conversation_scope.reset(token)
+            active_model_policy.reset(model_token)
+            _wait_callback.reset(wait_token)
 
-    @staticmethod
-    def _conversation_urls():
+    def _conversation_urls(self):
         try:
-            data = json.loads((profile_directory() / 'conversations.json').read_text(encoding='utf-8'))
+            data = json.loads((self.profile_directory() / 'conversations.json').read_text(encoding='utf-8'))
             return {key: url for key, url in data.items() if isinstance(key, str) and isinstance(url, str)
-                    and urlsplit(url).scheme == 'https' and urlsplit(url).netloc == 'gemini.google.com'
-                    and re.fullmatch(r'/app/[A-Za-z0-9_-]+', urlsplit(url).path)}
+                    and urlsplit(url).scheme == 'https' and urlsplit(url).netloc == self.host
+                    and re.fullmatch(self.chat_pattern, url)}
         except (OSError, ValueError, AttributeError):
             return {}
 
     def _remember_conversation(self, page, scope):
-        if not scope or not re.fullmatch(r'https://gemini\.google\.com/app/[A-Za-z0-9_-]+', page.url):
+        if not scope or not re.fullmatch(self.chat_pattern, page.url):
             return
         urls = self._conversation_urls()
         if urls.get(scope) == page.url:
@@ -143,7 +288,7 @@ class GeminiBrowser:
         urls.pop(scope, None)
         urls[scope] = page.url
         urls = dict(list(urls.items())[-200:])
-        path = profile_directory() / 'conversations.json'
+        path = self.profile_directory() / 'conversations.json'
         pending = path.with_suffix('.pending.json')
         pending.write_text(json.dumps(urls), encoding='utf-8')
         pending.replace(path)
@@ -157,7 +302,7 @@ class GeminiBrowser:
         if scope not in urls:
             return
         urls.pop(scope)
-        path = profile_directory() / 'conversations.json'
+        path = self.profile_directory() / 'conversations.json'
         pending = path.with_suffix('.pending.json')
         pending.write_text(json.dumps(urls), encoding='utf-8')
         pending.replace(path)
@@ -166,7 +311,7 @@ class GeminiBrowser:
         """Hide only native windows owned by this dedicated CDP browser."""
         if os.name != 'nt':
             if not visible:
-                raise GeminiWebError('Ẩn cửa sổ Gemini hiện hỗ trợ Windows.')
+                raise GeminiWebError(f'Ẩn cửa sổ {self.provider_label} hiện hỗ trợ Windows.')
             return
         import ctypes
         from ctypes import wintypes
@@ -200,7 +345,7 @@ class GeminiBrowser:
 
         user32.EnumWindows(visit, 0)
         if not windows:
-            raise GeminiWebError('Không tìm được cửa sổ Gemini để ẩn/hiện. Bấm Mở Gemini rồi thử lại.')
+            raise GeminiWebError(f'Không tìm được cửa sổ {self.provider_label} để ẩn/hiện. Bấm Mở {self.provider_label} rồi thử lại.')
         # SW_HIDE suspends Chromium painting: Gemini's lazy UI can remain
         # half-loaded forever. Keep this dedicated window rendering outside
         # the entire virtual desktop, without activating it.
@@ -228,7 +373,7 @@ class GeminiBrowser:
         for handle in windows:
             user32.ShowWindow(handle, 8)  # SW_SHOWNA, no focus stealing
         if any(not user32.IsWindowVisible(handle) for handle in windows):
-            raise GeminiWebError('Không đổi được trạng thái cửa sổ Gemini. Thử mở lại Gemini.')
+            raise GeminiWebError(f'Không đổi được trạng thái cửa sổ {self.provider_label}. Thử mở lại {self.provider_label}.')
         self._hidden = not visible
 
     def _connect(self):
@@ -238,7 +383,7 @@ class GeminiBrowser:
                 return self._page
             self._page = self._browser.contexts[0].new_page()
             self._active_conversation = None
-            self._page.goto('https://gemini.google.com/app', wait_until='domcontentloaded', timeout=60000)
+            self._page.goto(self.home_url, wait_until='domcontentloaded', timeout=60000)
             return self._page
         candidates = [
             Path(os.environ.get('PROGRAMFILES', 'C:/Program Files')) / 'Google/Chrome/Application/chrome.exe',
@@ -250,7 +395,7 @@ class GeminiBrowser:
         if not executable:
             raise GeminiWebError('Chưa tìm thấy Chrome hoặc Edge trên máy chạy backend.')
         # Browser cookies must live outside the HTTP-served video storage.
-        profile = profile_directory()
+        profile = self.profile_directory()
         profile.mkdir(parents=True, exist_ok=True)
         # Reconnect after a backend restart without relaunching the same profile.
         port_file = profile / 'connection.json'
@@ -281,7 +426,7 @@ class GeminiBrowser:
                 '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
                 '--disable-backgrounding-occluded-windows',
                 '--disable-features=CalculateNativeWinOcclusion',
-                'https://gemini.google.com/app',
+                self.home_url,
             ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **launch_options)
         endpoint = f'http://127.0.0.1:{port}'
         deadline = time.monotonic() + 30
@@ -292,7 +437,7 @@ class GeminiBrowser:
             except OSError:
                 time.sleep(.25)
         else:
-            raise GeminiWebError('Không mở được phiên Gemini. Đóng cửa sổ Gemini riêng rồi thử lại.')
+            raise GeminiWebError(f'Không mở được phiên {self.provider_label}. Đóng cửa sổ {self.provider_label} riêng rồi thử lại.')
         port_file.write_text(json.dumps({'port': port}), encoding='utf-8')
         if self._playwright is not None:
             self._playwright.stop()
@@ -300,9 +445,9 @@ class GeminiBrowser:
         self._browser = self._playwright.chromium.connect_over_cdp(endpoint, timeout=30000)
         self._active_conversation = None
         context = self._browser.contexts[0]
-        self._page = next((p for p in context.pages if 'gemini.google.com' in p.url), None) or context.new_page()
-        if 'gemini.google.com' not in self._page.url:
-            self._page.goto('https://gemini.google.com/app', wait_until='domcontentloaded', timeout=60000)
+        self._page = next((p for p in context.pages if urlsplit(p.url).hostname == self.host), None) or context.new_page()
+        if urlsplit(self._page.url).hostname != self.host:
+            self._page.goto(self.home_url, wait_until='domcontentloaded', timeout=60000)
         return self._page
 
     @staticmethod
@@ -349,7 +494,7 @@ class GeminiBrowser:
         deadline = time.monotonic() + seconds
         while True:
             if cancelled.is_set():
-                raise GeminiWebError('Đã hủy chờ Gemini.')
+                raise GeminiWebError(f'Đã hủy chờ {self.provider_label}.')
             status = self._status()
             if status.get('needs_verification'):
                 self._set_visible(True)
@@ -359,44 +504,127 @@ class GeminiBrowser:
                 return bool(status.get('ready'))
             page.wait_for_timeout(250)
 
-    def _complete(self, messages, timeout, cancelled, background=None, attachments=None, conversation=None, on_wait=None):
-        with session_lock():
-            return self._complete_unlocked(messages, timeout, cancelled, background, attachments, conversation, on_wait)
+    def _complete(self, messages, timeout, cancelled, background=None, attachments=None, conversation=None, on_wait=None, policy=None):
+        with session_lock(self.profile_directory()):
+            return self._complete_unlocked(messages, timeout, cancelled, background, attachments, conversation, on_wait, policy)
 
-    def _complete_unlocked(self, messages, timeout, cancelled, background=None, attachments=None, conversation=None, on_wait=None):
+    def _on_reply(self, page, request_id, conversation):
+        """Provider hook for durable accounting after a matched reply."""
+
+    def _complete_unlocked(self, messages, timeout, cancelled, background=None, attachments=None, conversation=None, on_wait=None, policy=None):
+        from app.services.ai.request_journal import RequestJournal
+        journal=RequestJournal(self.profile_directory(),conversation,messages,policy,attachments) if conversation and policy else None
+        saved=journal.load() if journal else None
+        delivery_key=(conversation,journal.key) if journal else None
+        if saved and delivery_key not in self._delivered_requests and saved.get('status')=='received':
+            response=saved.get('response')
+            if isinstance(response,str) and parse_reply(response,saved.get('request_id')) is not None:
+                self._delivered_requests.add(delivery_key)
+                print(f'[{self.provider_label} Web] Recovered received reply after interruption; no resend.',flush=True)
+                return response
         page = self._connect()
         self._set_visible(not (settings.gemini_web_background if background is None else background))
         if not self._wait_ready(page, cancelled):
             self._set_visible(True)
             page.bring_to_front()
-            raise GeminiWebError('Gemini chưa sẵn sàng. Mở Cấu hình AI → Mở Gemini và đăng nhập trước.')
+            raise GeminiWebError(f'{self.provider_label} chưa sẵn sàng. Mở Cấu hình AI → Mở {self.provider_label} và đăng nhập trước.')
         destination = self._conversation_urls().get(conversation) if conversation else None
         if (not conversation or self._active_conversation != conversation
                 or (destination and page.url != destination)):
-            page.goto(destination or 'https://gemini.google.com/app', wait_until='domcontentloaded', timeout=60000)
+            page.goto(destination or self.home_url, wait_until='domcontentloaded', timeout=60000)
             self._active_conversation = conversation
         if not self._wait_ready(page, cancelled):
-            raise GeminiWebError('Gemini chưa tải xong ô nhập hoặc cần đăng nhập. Mở Gemini rồi thử lại.')
+            raise GeminiWebError(f'{self.provider_label} chưa tải xong ô nhập hoặc cần đăng nhập. Mở {self.provider_label} rồi thử lại.')
+        if saved and delivery_key not in self._delivered_requests and saved.get('status') in {'prepared','sent'}:
+            old_id=saved.get('request_id')
+            if isinstance(old_id,str) and re.fullmatch(r'[a-f0-9]{32}',old_id):
+                old_url=saved.get('url')
+                if isinstance(old_url,str) and re.fullmatch(self.chat_pattern, old_url) and page.url!=old_url:
+                    page.goto(old_url,wait_until='domcontentloaded',timeout=60000)
+                    self._wait_ready(page,cancelled)
+                end=time.monotonic()+20
+                while time.monotonic()<end:
+                    if cancelled.is_set():
+                        raise GeminiWebError(f'Đã hủy khôi phục phản hồi {self.provider_label}.')
+                    replies=page.locator(self.response_selector)
+                    if replies.count():
+                        recovered=parse_reply(replies.last.inner_text(),old_id)
+                        if recovered is not None:
+                            normalized=json.dumps(recovered,ensure_ascii=False)
+                            self._on_reply(page, old_id, conversation)
+                            journal.save('received',old_id,page.url,normalized)
+                            self._delivered_requests.add(delivery_key)
+                            return normalized
+                    page.wait_for_timeout(500)
+                self._stop_generation(page)
+        if policy is not None:
+            limit=settings.gemini_web_max_chat_turns
+            if conversation and limit>0 and page.locator(self.query_selector).count()>=limit:
+                # Every request already carries the locked character bible,
+                # source neighbours and rolling memory. Rotate only the UI
+                # history, preserving the old chat and all disk checkpoints.
+                page.goto(self.home_url,wait_until='domcontentloaded',timeout=60000)
+                if not self._wait_ready(page,cancelled):
+                    raise GeminiWebError(f'{self.provider_label} chưa sẵn sàng sau khi chuyển phiên chat dài.')
+                print(f'[{self.provider_label} Web] Rotated chat after {limit} turns; structured context retained.',flush=True)
+            for selection_attempt in range(2):
+                try:
+                    chosen = self._select_model(page, policy)
+                    break
+                except ModelSelectionError as exc:
+                    # After navigation Gemini can replace a menu mid-click.
+                    # Retry only a DOM failure, before filling any prompt;
+                    # explicit unavailable/mismatched choices remain errors.
+                    if selection_attempt or exc.__cause__ is None:
+                        raise GeminiWebModelError(str(exc)) from exc
+                    if cancelled.is_set():
+                        raise GeminiWebError(f'Đã hủy trước khi gửi {self.provider_label}.')
+                    print(f'[{self.provider_label} Web] Model menu changed during navigation; checking once more.', flush=True)
+                    page.wait_for_timeout(1000)
+            print(f'[{self.provider_label} Web] Confirmed {chosen["model"]}, thinking={chosen["thinking"]}', flush=True)
+        if cancelled.is_set():
+            raise GeminiWebError(f'Đã hủy trước khi gửi {self.provider_label}.')
         editor = self._editor(page)
         if editor is None:
-            raise GeminiWebError('Không tìm thấy ô nhập Gemini. Kiểm tra đăng nhập hoặc giao diện Gemini.')
+            raise GeminiWebError(f'Không tìm thấy ô nhập {self.provider_label}. Kiểm tra đăng nhập hoặc giao diện {self.provider_label}.')
         request_id = uuid.uuid4().hex
         prompt = '\n\n'.join(str(message.get('content', '')) for message in messages)
         prompt += ('\n\nChỉ trả JSON, không Markdown. Bổ sung trường request_id chính xác: '
                    + json.dumps(request_id) + '. Mỗi id trong current_items phải có text không rỗng. '
+                   'Trong text, dùng dấu “…” khi trích dẫn để JSON không bị lỗi ngoặc kép. '
                    'Làm đúng nhiệm vụ đã yêu cầu; không thay items bằng lời giải thích, không gộp hoặc đổi id. Ví dụ cấu trúc: '
                    '{"request_id":"' + request_id + '","items":[{"id":1,"text":"kết quả"}],"memory_updates":{}}')
+        self._before_send(page, prompt, conversation, cancelled, policy)
+        editor = self._editor(page)
+        if editor is None:
+            raise GeminiWebError(f'Không tìm thấy ô nhập {self.provider_label} trước khi gửi.')
         upload_started = time.monotonic()
         if attachments:
             self._upload_images(page, attachments)
-            print(f'[Gemini Web] Attached {len(attachments)} image(s) in {time.monotonic() - upload_started:.1f}s', flush=True)
-        responses = page.locator('model-response')
+            print(f'[{self.provider_label} Web] Attached {len(attachments)} image(s) in {time.monotonic() - upload_started:.1f}s', flush=True)
+        responses = page.locator(self.response_selector)
+        if journal:
+            journal.save('prepared',request_id,page.url)
         editor.fill(prompt, timeout=15000)
         # Enter is the normal submit action, Shift+Enter adds a newline.
         editor.press('Enter')
+        self._on_sent(page, prompt, conversation)
+        if journal:
+            journal.save('sent',request_id,page.url)
         self._remember_conversation(page, conversation)
         response_started = time.monotonic()
-        deadline = response_started + min(max(timeout, 30), 300)
+        idle_timeout, hard_timeout = response_wait_limits(timeout)
+        deadline = response_started + hard_timeout
+        last_progress = response_started
+        observed_reply = None
+        observed_thought = None
+        initial_generation_confirmed = False
+        journal_url = page.url
+        waiting_for_thought = False
+        silence_limit = idle_timeout
+        transport_refreshed = None
+        transport_idle_since = response_started
+        transport_stalled = False
         previous = None
         stable_since = 0.
         invalid_reply = None
@@ -404,29 +632,48 @@ class GeminiBrowser:
         next_verification_check = 0.
         next_wait_update = response_started + 15
         while time.monotonic() < deadline:
+            waiting_for_thought = False
+            belongs = False
+            generating = False
             if cancelled.is_set():
                 self._stop_generation(page)
-                raise GeminiWebError('Đã hủy chờ Gemini.')
+                raise GeminiWebError(f'Đã hủy chờ {self.provider_label}.')
             if on_wait and time.monotonic() >= next_wait_update:
                 on_wait(int(time.monotonic() - response_started))
                 next_wait_update = time.monotonic() + 15
             if page.is_closed():
-                raise GeminiWebError('Cửa sổ Gemini đã đóng. Mở lại và chạy tiếp từ checkpoint.')
+                raise GeminiWebError(f'Cửa sổ {self.provider_label} đã đóng. Mở lại và chạy tiếp từ checkpoint.')
             if time.monotonic() >= next_verification_check:
                 next_verification_check = time.monotonic() + 2
                 self._remember_conversation(page, conversation)
+                if journal and page.url != journal_url:
+                    # Gemini often assigns /app/<id> after submission. Retain
+                    # that address before a crash or timeout, not only at success.
+                    journal.save('sent', request_id, page.url)
+                    journal_url = page.url
                 verification = self._verification_message(page)
                 if verification:
                     self._set_visible(True)
                     page.bring_to_front()
                     raise GeminiWebVerificationRequired(verification)
+            activity = self._generation_activity(page, request_id)
+            generating = activity.get('generating', False)
+            initial_generation_confirmed = initial_generation_confirmed or activity.get('current_request', False)
+            thought = activity.get('thinking')
+            waiting_for_thought = thought is not None and generating
+            if thought is not None and thought != observed_thought:
+                observed_thought = thought
+                last_progress = time.monotonic()
             # Gemini can reuse the same response element between chats. The
             # request ID, not a growing DOM count, identifies the new answer.
             if responses.count():
                 reply = responses.last.inner_text()
                 data = parse_reply(reply, request_id)
-                stop = page.locator('button[aria-label*="Stop"], button[aria-label*="Dừng"], button[aria-label*="Ngừng"], button.stop-button')
-                generating = any(stop.nth(i).is_visible() for i in range(stop.count()))
+                belongs = data is not None or (bool(reply.strip()) and self._response_belongs(responses.last, request_id))
+                if belongs and reply != observed_reply:
+                    observed_reply = reply
+                    last_progress = time.monotonic()
+                waiting_for_thought = waiting_for_thought or bool(belongs and generating and not parse_partial_reply(reply, request_id))
                 if data is not None:
                     normalized = json.dumps(data, ensure_ascii=False)
                     if normalized != previous:
@@ -443,34 +690,77 @@ class GeminiBrowser:
                                 previous = None
                                 continue
                         self._remember_conversation(page, conversation)
-                        print(f'[Gemini Web] Valid reply in {time.monotonic() - response_started:.1f}s', flush=True)
+                        self._on_reply(page, request_id, conversation)
+                        if journal:
+                            journal.save('received',request_id,page.url,normalized)
+                            self._delivered_requests.add(delivery_key)
+                            if len(self._delivered_requests)>2000:
+                                self._delivered_requests={delivery_key}
+                        print(f'[{self.provider_label} Web] Valid reply in {time.monotonic() - response_started:.1f}s', flush=True)
                         return normalized
-                elif reply.strip() and not generating and responses.last.evaluate(
-                    '(element, requestId) => { const queries = document.querySelectorAll("user-query"); '
-                    'const query = queries[queries.length - 1]; return !!query '
-                    '&& query.textContent.includes(requestId) '
-                    '&& !!(query.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING); }',
-                    request_id):
+                elif reply.strip() and not generating and belongs:
                     if reply != invalid_reply:
                         invalid_reply, invalid_since = reply, time.monotonic()
-                    elif time.monotonic() - invalid_since >= 3:
+                    elif time.monotonic() - invalid_since >= (3 if is_refusal(reply) else 20):
                         excerpt = re.sub(r'\s+', ' ', reply).strip()[:240]
                         if is_refusal(reply):
                             self._forget_failed_conversation(conversation)
                             raise GeminiWebRefusal('Gemini từ chối yêu cầu. Đã dừng gửi lại và giữ checkpoint. Phản hồi: ' + excerpt)
-                        raise GeminiWebError('Gemini đã trả lời nhưng không đúng JSON: ' + excerpt)
+                        raise GeminiWebMalformedReply('Gemini đã trả lời nhưng không đúng JSON; thu nhỏ nhóm cần dịch.',
+                                                      partial=parse_partial_reply(reply, request_id))
                 else:
                     invalid_reply, invalid_since = None, 0.
+            # A Gemini SPA can display the submitted query but never start a
+            # response (no current response and no Stop button). Reload the
+            # same chat once to reconnect its transport before declaring timeout.
+            if belongs or generating:
+                transport_idle_since = time.monotonic()
+            if not belongs and not generating and time.monotonic()-transport_idle_since >= 30:
+                if transport_refreshed is None:
+                    queries = page.locator(self.query_selector)
+                    visible_request = queries.count() and queries.last.evaluate(
+                        '(element, nonce) => element.textContent.includes(nonce)', request_id)
+                    if visible_request:
+                        page.reload(wait_until='domcontentloaded', timeout=60000)
+                        if not self._wait_ready(page, cancelled):
+                            raise GeminiWebError(f'{self.provider_label} chưa sẵn sàng sau khi kết nối lại; checkpoint được giữ.')
+                        responses = page.locator(self.response_selector)
+                        transport_refreshed = time.monotonic()
+                        transport_idle_since = transport_refreshed
+                        last_progress = transport_refreshed
+                        previous = observed_reply = invalid_reply = None
+                        print(f'[{self.provider_label} Web] Reconnected stalled chat once; waiting for the original request.', flush=True)
+                        continue
+                elif time.monotonic()-transport_refreshed >= 30:
+                    transport_stalled = True
+                    break
+            # A confirmed current generation can spend its initial phase in
+            # thought before emitting any complete item. Give that phase one
+            # bounded extra window; stale answers and idle tabs get none.
+            waiting_for_thought = waiting_for_thought or bool(
+                initial_generation_confirmed and not parse_partial_reply(observed_reply or '', request_id))
+            silence_limit = idle_timeout * (2 if waiting_for_thought else 1)
+            if time.monotonic() - last_progress >= silence_limit:
+                break
             page.wait_for_timeout(500)
         # A retry must not leave the previous generation running in the tab.
         self._stop_generation(page)
-        self._forget_failed_conversation(conversation)
-        raise GeminiWebTimeout(f'Quá thời gian chờ Gemini ({min(max(timeout, 30), 300)} giây). '
-                               'Đã dừng gửi lại và giữ checkpoint. Bạn có thể chạy tiếp khi Gemini ổn định.')
+        self._remember_conversation(page, conversation)
+        if journal:
+            journal.save('sent', request_id, page.url)
+        partial = parse_partial_reply(observed_reply or '', request_id)
+        if partial and partial.get('items'):
+            # Preserve complete, nonce-matched items. The caller validates their
+            # IDs and retries only the missing cues; never invent a JSON tail.
+            raise GeminiWebMalformedReply('Gemini dừng giữa câu trả lời; đã giữ các mục đầy đủ để xử lý phần còn thiếu.', partial=partial)
+        reason = ('Gemini đã nhận yêu cầu nhưng không bắt đầu trả lời sau một lần kết nối lại'
+                  if transport_stalled else f'Gemini không có nội dung mới trong {silence_limit} giây'
+                  if time.monotonic()-last_progress >= silence_limit
+                  else f'Gemini vượt giới hạn tổng {hard_timeout} giây')
+        raise GeminiWebTimeout('Quá thời gian chờ Gemini: ' + reason + '. Đã giữ checkpoint và liên kết chat để khôi phục phản hồi đến muộn.')
 
-    @staticmethod
-    def _stop_generation(page):
-        stop = page.locator('button[aria-label*="Stop"], button[aria-label*="Dừng"], button[aria-label*="Ngừng"], button.stop-button')
+    def _stop_generation(self, page):
+        stop = page.locator(self.stop_selector)
         for i in range(stop.count()):
             if stop.nth(i).is_visible():
                 stop.nth(i).click(timeout=5000)
@@ -480,7 +770,7 @@ class GeminiBrowser:
     def _upload_images(page, attachments):
         files = [str(Path(path).resolve()) for path in attachments]
         if not files or any(not Path(path).is_file() for path in files):
-            raise GeminiWebError('Thiếu ảnh kiểm tra phụ đề để gửi Gemini.')
+            raise GeminiWebError(f'Thiếu ảnh kiểm tra phụ đề để gửi {self.provider_label}.')
         previous_previews = page.locator('.file-preview-container img').evaluate_all(
             'images => images.map(image => image.src)')
         uploader = page.get_by_role('button', name=re.compile(r'Upload files|Add files|Nội dung tải lên', re.I))
@@ -523,7 +813,7 @@ class GeminiBrowser:
                     reopened = True
                 page.wait_for_timeout(100)
             if not chosen:
-                raise GeminiWebError('Không mở được bộ chọn ảnh Gemini. Mở Gemini và thử lại.')
+                raise GeminiWebError(f'Không mở được bộ chọn ảnh {self.provider_label}. Mở {self.provider_label} và thử lại.')
         finally:
             page.remove_listener('filechooser', on_chooser)
         page.keyboard.press('Escape')
@@ -537,13 +827,38 @@ class GeminiBrowser:
 
     async def _run(self, method, *args):
         if self._gate.locked():
-            raise GeminiWebError('Gemini đang xử lý một yêu cầu khác. Đợi xong rồi thử lại.')
-        async with self._gate:
-            return await asyncio.get_running_loop().run_in_executor(self._executor, method, *args)
+            raise GeminiWebError(f'{self.provider_label} đang xử lý một yêu cầu khác. Đợi xong rồi thử lại.')
+        await self._gate.acquire()
+        try:
+            work = asyncio.get_running_loop().run_in_executor(self._executor, method, *args)
+        except BaseException:
+            self._gate.release()
+            raise
+        caller = asyncio.get_running_loop().create_future()
+
+        def finished(future):
+            # Cancelling the coroutine does not stop its Playwright thread.
+            # The worker owns this gate until it actually exits; otherwise
+            # cleanup can queue behind a live worker and hold the gate again.
+            self._gate.release()
+            if future.cancelled():
+                if not caller.done():
+                    caller.cancel()
+                return
+            error = future.exception()  # Observe late errors after cancellation.
+            if not caller.done():
+                if error is not None:
+                    caller.set_exception(error)
+                else:
+                    caller.set_result(future.result())
+
+        work.add_done_callback(finished)
+        # Cancelling this relay does not cancel the thread's completion future.
+        return await caller
 
     def _close(self):
         """Exit only the browser connected to our dedicated profile; retain login."""
-        with session_lock():
+        with session_lock(self.profile_directory()):
             connected = self._browser is not None and self._browser.is_connected()
             if connected:
                 session = self._browser.new_browser_cdp_session()
@@ -553,7 +868,7 @@ class GeminiBrowser:
                     # Chrome can disconnect before acknowledging Browser.close.
                     if self._browser.is_connected():
                         raise
-                (profile_directory() / 'connection.json').unlink(missing_ok=True)
+                (self.profile_directory() / 'connection.json').unlink(missing_ok=True)
             if self._playwright is not None:
                 self._playwright.stop()
             self._browser = self._page = self._playwright = None
@@ -576,8 +891,18 @@ class GeminiBrowser:
     async def complete(self, messages, timeout=180, background=None, attachments=None, on_wait=None):
         cancelled = Event()
         try:
-            return await self._run(self._complete, messages, timeout, cancelled, background, attachments,
-                                   _conversation_scope.get(), on_wait)
+            queued=time.monotonic()
+            callback=on_wait or _wait_callback.get()
+            while True:
+                try:
+                    return await self._run(self._complete, messages, timeout, cancelled, background, attachments,
+                                           _conversation_scope.get(), callback, active_model_policy.get())
+                except GeminiSessionBusy:
+                    if time.monotonic()-queued>=min(60,timeout):
+                        raise GeminiWebTimeout(f'{self.provider_label.upper()}_SESSION_BUSY: Phiên đang phục vụ tác vụ khác; checkpoint được giữ.') from None
+                    if callback:
+                        callback(int(time.monotonic()-queued))
+                    await asyncio.sleep(2)
         finally:
             cancelled.set()
 
@@ -587,9 +912,17 @@ browser = GeminiBrowser()
 
 class GeminiWebClient:
     """Reuse the same ID validation, timing, memory and checkpoint pipeline."""
-    def __init__(self):
+    def __init__(self, provider_browser=None):
+        self.browser = provider_browser or browser
         self.chat = SimpleNamespace(completions=self)
 
     async def create(self, *, messages, timeout=180, **kwargs):
-        content = await browser.complete(messages, timeout)
+        try:
+            content = await self.browser.complete(messages, timeout)
+        except GeminiWebMalformedReply as exc:
+            if exc.partial is not None:
+                content = json.dumps(exc.partial, ensure_ascii=False)
+            else:
+                from app.services.ai.translation import TranslationBatchStructureError
+                raise TranslationBatchStructureError(str(exc)) from exc
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])

@@ -56,10 +56,10 @@ jobs:
         run: |
           python scripts/desktop/build-native.py
           if($LASTEXITCODE -ne 0){throw 'Native frame kernel build failed'}
-          python -m pip install numpy opencv-python-headless pydantic-settings
+          python -m pip install numpy opencv-python-headless pydantic-settings openai requests
           if($LASTEXITCODE -ne 0){throw 'Native test dependencies failed'}
           Push-Location be
-          python -m unittest tests.test_native_frames tests.test_lexical_guidance tests.test_caption_fallback tests.test_caption_cache
+          python -m unittest tests.test_native_frames tests.test_lexical_guidance tests.test_caption_fallback tests.test_caption_cache tests.test_durable_translation tests.test_gemini_models tests.test_gemini_json_recovery tests.test_gemini_web_replies
           Pop-Location
           if($LASTEXITCODE -ne 0){throw 'Native frame parity checks failed'}
           $Payload="$env:RUNNER_TEMP\EditorCI\app"

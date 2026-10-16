@@ -6,6 +6,9 @@ memory across long videos. Legacy Google helpers remain isolated for backwards
 compatibility tests but are never selected by ``get_translation_engine``.
 """
 from __future__ import annotations
+from app.services.ai.web_provider import is_web_engine
+from app.services.ai.provider_status import provider_name, error_prefix
+from app.services.ai.caption_evidence import NON_CAPTION
 
 import asyncio
 import copy
@@ -20,7 +23,10 @@ from dataclasses import replace
 from pathlib import Path
 
 from app.core import settings
-from app.services.ai.gemini_web import GeminiWebRefusal, GeminiWebTimeout, GeminiWebVerificationRequired
+from app.services.persistence import atomic_json, read_json, PersistenceError
+from app.services.ai.cue_recovery import CueRecovery
+from app.services.ai.gemini_web import GeminiWebRefusal, GeminiWebTimeout, GeminiWebVerificationRequired, GeminiWebModelError
+from app.services.ai.gemini_models import model_policy, current_model_key
 from app.models.job import ProcessingMode
 from app.services.ai.character_names import (
     build_character_name_registry,
@@ -28,6 +34,9 @@ from app.services.ai.character_names import (
     character_name_contract,
 )
 from app.services.ai.lexical_guidance import lexical_guidance, LEXICON_VERSION
+from app.services.ai.translation_memory import (
+    MemoryArchive, memory_session, build_handoff, record_context, source_notes,
+)
 from app.services.presets import ProcessingProfile, get_processing_profile
 from app.services.subtitles.timing import SubtitleEvent
 
@@ -36,28 +45,34 @@ class TranslationError(RuntimeError):
     pass
 
 
+class TranslationNeedsReview(TranslationError):
+    """Some groups remain unresolved; valid later groups are already durable."""
+
+
 class TranslationBatchStructureError(TranslationError):
-    def __init__(self, message: str, valid_items: dict[int, str] | None = None, updates: dict | None = None):
+    def __init__(self, message: str, valid_items: dict[int, str] | None = None, updates: dict | None = None, source_repair_ids: set[int] | None = None):
         super().__init__(message)
         self.valid_items = valid_items or {}
         self.updates = updates or {}
+        self.source_repair_ids = source_repair_ids or set()
 
 
-TRANSLATION_POLICY_VERSION = 24
+TRANSLATION_POLICY_VERSION = 25
 
 
 def get_translation_profile(processing_mode=None):
     profile = get_processing_profile(processing_mode)
-    if settings.translation_engine.lower() == 'gemini_web':
+    if is_web_engine():
         limit = 24 if profile.name == 'fast' else 8 if profile.name == 'quality' else 12
         return replace(profile, translation_batch_items=min(profile.translation_batch_items, limit))
     return profile
 
 
 def create_translation_client():
-    if settings.translation_engine.lower() == 'gemini_web':
+    if is_web_engine():
         from app.services.ai.gemini_web import GeminiWebClient
-        return GeminiWebClient()
+        from app.services.ai.web_provider import get_browser
+        return GeminiWebClient(get_browser())
     if not settings.ninerouter_api_key:
         raise TranslationError('Chưa cấu hình API key để dịch phụ đề.')
     from openai import AsyncOpenAI
@@ -121,7 +136,7 @@ class GeminiTranslation(TranslationEngine):
             return []
         if source_language != "auto" and source_language.lower() == target_language.lower():
             return events
-        use_browser = settings.translation_engine.lower() == 'gemini_web'
+        use_browser = is_web_engine()
         if not use_browser and not settings.ninerouter_api_key:
             raise TranslationError(
                 "Chưa cấu hình API key 9router nên AI không thể dịch phụ đề."
@@ -157,107 +172,168 @@ class GeminiTranslation(TranslationEngine):
             context,
             ranges,
         )
+        recovery_store = CueRecovery(checkpoint_file.with_suffix('.parts.sqlite3'), fingerprint) if checkpoint_file else None
         translated_texts = [
             canonicalize_character_text(text, character_names)
             for text in translated_texts
         ]
-        completed_batches = sum(end <= len(translated_texts) for _, end in ranges)
-        if on_batch_progress:
-            on_batch_progress(completed_batches, len(ranges))
-
-        started_at = time.monotonic()
-        total_budget = max(
-            profile.translation_request_timeout_seconds,
-            len(ranges) * profile.translation_batch_budget_seconds,
-        )
-
-        for batch_index, (start, end) in enumerate(ranges, start=1):
-            if end <= len(translated_texts):
-                continue
-            if start != len(translated_texts):
-                raise TranslationError(
-                    "Checkpoint dịch không nằm đúng ranh giới batch; hãy xóa checkpoint và chạy lại."
-                )
-            elapsed = time.monotonic() - started_at
-            if elapsed >= total_budget:
-                raise TranslationError(
-                    f"Dịch vượt quá ngân sách {int(total_budget)} giây; "
-                    f"đã lưu checkpoint {completed_batches}/{len(ranges)} batch để chạy tiếp."
-                )
-            batch = [
-                {"id": index + 1, "source": source_texts[index],
-                 "time": [events[index].start, events[index].end]}
-                for index in range(start, end)
-            ]
-            previous_context = [
-                {
-                    "id": index + 1,
-                    "source": source_texts[index],
-                    "translated": translated_texts[index],
-                }
-                for index in range(max(0, start - 8), start)
-            ]
-            next_context = [
-                {"id": index + 1, "source": source_texts[index]}
-                for index in range(end, min(len(source_texts), end + 4))
-            ]
-            batch_texts, memory_updates = await _translate_gemini_batch_with_retries(
-                client,
-                batch,
-                source_language,
-                target_language,
-                context,
-                memory,
-                previous_context,
-                next_context,
-                retries=profile.translation_retries,
-                request_timeout_seconds=profile.translation_request_timeout_seconds,
-                fast_mode=profile.name == 'fast',
-            )
-
-            for item, translated in zip(batch, batch_texts):
-                source = str(item["source"])
-                cleaned = _clean_polished_subtitle(translated, "")
-                cleaned = unicodedata.normalize("NFC", cleaned)
-                cleaned = canonicalize_character_text(cleaned, character_names)
-                if not cleaned or (
-                    target_language.lower() == "vi" and _looks_chinese(cleaned)
-                ):
-                    raise TranslationError(
-                        f"AI còn sót nội dung chưa dịch ở mục {item['id']}: {source[:120]}"
-                    )
-                translated_texts.append(cleaned)
-
-            _merge_translation_memory(memory, memory_updates)
-            memory["recent_translations"] = previous_context[-4:] + [
-                {
-                    "id": item["id"],
-                    "source": item["source"],
-                    "translated": translated,
-                }
-                for item, translated in zip(batch[-8:], batch_texts[-8:])
-            ]
-            completed_batches = batch_index
-            _write_translation_checkpoint(
-                checkpoint_file,
-                fingerprint,
-                translated_texts,
-                memory,
-                len(source_texts),
-            )
+        archive = MemoryArchive(checkpoint_file.with_name('translation_memory.sqlite3'),
+                                _memory_namespace(fingerprint, events)) if checkpoint_file else None
+        if archive:
+            archive.seed(events, translated_texts, memory)
+        with memory_session(archive, profile.name):
+            completed_batches = sum(end <= len(translated_texts) for _, end in ranges)
             if on_batch_progress:
                 on_batch_progress(completed_batches, len(ranges))
 
-        if len(translated_texts) != len(events):
-            raise TranslationError("AI trả về thiếu câu dịch so với phụ đề nguồn.")
-        return [
-            SubtitleEvent(
-                event.start,
-                event.end,
-                canonicalize_character_text(translated_texts[index], character_names),
+            started_at = time.monotonic()
+            total_budget = max(
+                profile.translation_request_timeout_seconds,
+                len(ranges) * profile.translation_batch_budget_seconds,
             )
-            for index, event in enumerate(events)
-        ]
+            saved_unresolved = read_json(checkpoint_file.with_name('translation_unresolved.json')) if checkpoint_file else None
+            repair_on_resume = {item['id'] for item in saved_unresolved.get('items', [])
+                                if isinstance(item, dict) and type(item.get('id')) is int} if (
+                isinstance(saved_unresolved, dict) and saved_unresolved.get('fingerprint') == fingerprint) else set()
+            unresolved={}
+            consecutive_failures=0
+            prefix_memory=copy.deepcopy(memory)
+            def save_pending():
+                if checkpoint_file:
+                    atomic_json(checkpoint_file.with_name('translation_unresolved.json'),
+                        {'fingerprint':fingerprint,'total':len(events),'items':[
+                            {'id':item_id,'start':events[item_id-1].start,'source':source_texts[item_id-1],'error':error}
+                            for item_id,error in sorted(unresolved.items())]})
+
+            for batch_index, (start, end) in enumerate(ranges, start=1):
+                if end <= len(translated_texts):
+                    continue
+                elapsed = time.monotonic() - started_at
+                if elapsed >= total_budget:
+                    raise TranslationError(
+                        f"Dịch vượt quá ngân sách {int(total_budget)} giây; "
+                        f"đã lưu checkpoint {completed_batches}/{len(ranges)} batch để chạy tiếp."
+                    )
+                batch = [
+                    {"id": index + 1, "source": source_texts[index],
+                     "time": [events[index].start, events[index].end]}
+                    for index in range(start, end)
+                ]
+                previous_context = [
+                    {
+                        "id": index + 1,
+                        "source": source_texts[index],
+                        **({'translated':translated_texts[index]} if index<len(translated_texts) else {}),
+                    }
+                    for index in range(max(0, start - 8), start)
+                    if index >= len(translated_texts) or translated_texts[index] != NON_CAPTION
+                ]
+                next_context = [
+                    {"id": index + 1, "source": source_texts[index]}
+                    for index in range(end, min(len(source_texts), end + 4))
+                ]
+                try:
+                    # Previously failed source cues need source verification,
+                    # rather than another full cycle of text timeouts.
+                    if repair_on_resume and recovery_store is not None:
+                        known, _ = recovery_store.load(batch)
+                        repair_pending = [item for item in batch if int(item['id']) in repair_on_resume
+                                          and int(item['id']) not in known]
+                        if repair_pending:
+                            from app.services.ai.caption_repair import repair_failed_cues
+                            repaired, changed = await repair_failed_cues(
+                                repair_pending, context=context, memory=memory,
+                                previous=previous_context, following=next_context,
+                                timeout=profile.translation_request_timeout_seconds)
+                            recovery_store.save(batch, repaired, changed)
+                            repair_on_resume.difference_update(int(item['id']) for item in repair_pending)
+                    batch_texts, memory_updates = await _translate_gemini_batch_with_retries(
+                        client,batch,source_language,target_language,context,memory,previous_context,next_context,
+                        retries=profile.translation_retries,request_timeout_seconds=profile.translation_request_timeout_seconds,
+                        fast_mode=profile.name=='fast',recovery_store=recovery_store)
+                except (TranslationError, GeminiWebRefusal, GeminiWebTimeout) as exc:
+                    known,_=recovery_store.load(batch) if recovery_store else ({},[])
+                    pending = [item for item in batch if int(item['id']) not in known]
+                    if pending and 'chữ Trung' in str(exc):
+                        from app.services.ai.caption_repair import repair_failed_cues
+                        try:
+                            repaired, changed = await repair_failed_cues(pending, context=context, memory=memory,
+                                previous=previous_context, following=next_context,
+                                timeout=profile.translation_request_timeout_seconds)
+                            record_context(batch, repaired, changed, context=context)
+                            if recovery_store:
+                                recovery_store.save(batch, repaired, changed)
+                            known.update(repaired)
+                        except (GeminiWebVerificationRequired, GeminiWebModelError, PersistenceError):
+                            raise
+                        except Exception as repair_error:
+                            # Leave failed evidence explicit and keep the original OCR/source.
+                            exc = TranslationError(f'{exc} Đối chiếu nguồn chưa thành công: {repair_error}')
+                    if len(known) != len(batch):
+                        for item in batch:
+                            if int(item['id']) not in known:
+                                unresolved[int(item['id'])]=str(exc)
+                        save_pending()
+                        _write_translation_checkpoint(checkpoint_file,fingerprint,translated_texts,prefix_memory,len(source_texts))
+                        consecutive_failures = 0 if known and 'chữ Trung' in str(exc) else consecutive_failures + 1
+                        if consecutive_failures>=3:
+                            raise TranslationError(f'{error_prefix()}_CIRCUIT_OPEN: {provider_name()} không xử lý được ba nhóm liên tiếp. Đã giữ checkpoint. Nguyên nhân gần nhất: {exc}') from exc
+                        continue
+                    batch_texts = [known[int(item['id'])] for item in batch]
+                    memory_updates = {}
+                consecutive_failures=0
+
+                cleaned_batch=[]
+                for item, translated in zip(batch, batch_texts):
+                    source = str(item["source"])
+                    cleaned = _clean_polished_subtitle(translated, "")
+                    cleaned = unicodedata.normalize("NFC", cleaned)
+                    cleaned = canonicalize_character_text(cleaned, character_names)
+                    if not cleaned or (
+                        target_language.lower() == "vi" and _looks_chinese(cleaned)
+                    ):
+                        raise TranslationError(
+                            f"AI còn sót nội dung chưa dịch ở mục {item['id']}: {source[:120]}"
+                        )
+                    cleaned_batch.append(cleaned)
+                if start==len(translated_texts):
+                    translated_texts.extend(cleaned_batch)
+
+                _merge_translation_memory(memory, memory_updates)
+                memory["recent_translations"] = previous_context[-4:] + [
+                    {
+                        "id": item["id"],
+                        "source": item["source"],
+                        "translated": translated,
+                    }
+                    for item, translated in zip(batch[-8:], batch_texts[-8:]) if translated != NON_CAPTION
+                ]
+                completed_batches = batch_index
+                if len(translated_texts)==end:
+                    prefix_memory=copy.deepcopy(memory)
+                _write_translation_checkpoint(
+                    checkpoint_file,
+                    fingerprint,
+                    translated_texts,
+                    prefix_memory,
+                    len(source_texts),
+                )
+                if on_batch_progress:
+                    on_batch_progress(completed_batches, len(ranges))
+
+            if len(translated_texts) != len(events):
+                save_pending()
+                raise TranslationNeedsReview(f'TRANSLATION_NEEDS_REVIEW: {len(unresolved)} câu chưa xử lý được. Các nhóm khác đã được giữ riêng; tiếp tục chỉ xử lý phần còn thiếu.')
+            save_pending()
+            return [
+                SubtitleEvent(
+                    event.start,
+                    event.end,
+                    canonicalize_character_text(translated_texts[index], character_names),
+                )
+                for index, event in enumerate(events)
+            ]
+
 
 
 class GoogleTranslation(TranslationEngine):
@@ -374,7 +450,7 @@ def _translation_fingerprint(
         "source_language": source_language,
         "target_language": target_language,
         "context": context or {},
-        "model": 'Gemini Web' if settings.translation_engine == 'gemini_web' else settings.ai_model,
+        "model": model_policy(profile.name).cache_key if is_web_engine() else settings.ai_model,
         "engine": settings.translation_engine,
         "processing_mode": profile.name,
         "batch_items": profile.translation_batch_items,
@@ -397,6 +473,11 @@ def _translation_fingerprint(
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _memory_namespace(fingerprint, events):
+    return hashlib.sha256(json.dumps({'fingerprint':fingerprint,
+        'times':[(e.start,e.end) for e in events]},sort_keys=True).encode()).hexdigest()
+
+
 def _load_translation_checkpoint(
     checkpoint_file: Path | None,
     fingerprint: str,
@@ -404,23 +485,22 @@ def _load_translation_checkpoint(
     ranges: list[tuple[int, int]],
 ) -> tuple[list[str], dict]:
     fallback = ([], _initial_translation_memory(context))
-    if checkpoint_file is None or not checkpoint_file.is_file():
+    if checkpoint_file is None or not (checkpoint_file.is_file() or checkpoint_file.with_suffix(checkpoint_file.suffix+'.bak').is_file()):
         return fallback
-    try:
-        data = json.loads(checkpoint_file.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    data = read_json(checkpoint_file, lambda value:isinstance(value,dict) and isinstance(value.get('translated_texts'),list) and isinstance(value.get('memory'),dict))
+    if data is None:
         return fallback
-    if not isinstance(data, dict) or data.get("fingerprint") != fingerprint:
-        return fallback
+    if data.get('fingerprint') != fingerprint:
+        raise TranslationError('CHECKPOINT_INCOMPATIBLE: Nguồn/ngữ cảnh/model khác tác vụ đã lưu. Checkpoint được giữ nguyên; tạo bản dịch mới để dùng cấu hình khác.')
     translated = data.get("translated_texts")
     memory = data.get("memory")
     if not isinstance(translated, list) or not all(isinstance(item, str) for item in translated):
-        return fallback
+        raise TranslationError('CHECKPOINT_INVALID: Có câu lưu không hợp lệ; giữ nguyên dữ liệu để khôi phục.')
     if not isinstance(memory, dict):
-        return fallback
+        raise TranslationError('CHECKPOINT_INVALID: Bộ nhớ ngữ cảnh không hợp lệ; giữ nguyên dữ liệu để khôi phục.')
     valid_offsets = {0, *(end for _, end in ranges)}
     if len(translated) not in valid_offsets:
-        return fallback
+        raise TranslationError('CHECKPOINT_INVALID: Checkpoint không khớp nhóm câu; không tự dịch lại từ đầu.')
     return list(translated), memory
 
 
@@ -437,19 +517,14 @@ def _write_translation_checkpoint(
     payload = {
         "version": 1,
         "fingerprint": fingerprint,
-        "model": 'Gemini Web' if settings.translation_engine == 'gemini_web' else settings.ai_model,
+        "model": current_model_key() if is_web_engine() else settings.ai_model,
         "translated_items": len(translated_texts),
         "total_items": total_items,
         "completed": len(translated_texts) == total_items,
         "translated_texts": translated_texts,
         "memory": memory,
     }
-    temporary = checkpoint_file.with_suffix(f"{checkpoint_file.suffix}.tmp")
-    temporary.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    temporary.replace(checkpoint_file)
+    atomic_json(checkpoint_file, payload)
 
 
 def _initial_translation_memory(context: dict | None) -> dict:
@@ -466,7 +541,7 @@ def _initial_translation_memory(context: dict | None) -> dict:
 def _merge_translation_memory(memory: dict, updates: object) -> None:
     if not isinstance(updates, dict):
         return
-    for key in ("characters", "relationships", "addressing_rules"):
+    for key in ("characters", "relationships", "addressing_rules", "source_notes"):
         incoming = updates.get(key)
         if not isinstance(incoming, list):
             continue
@@ -480,7 +555,7 @@ def _merge_translation_memory(memory: dict, updates: object) -> None:
             if encoded not in seen:
                 existing.append(item)
                 seen.add(encoded)
-        del existing[80:]
+        del existing[:-80]
 
     incoming_glossary = updates.get("glossary")
     if isinstance(incoming_glossary, dict):
@@ -492,7 +567,14 @@ def _merge_translation_memory(memory: dict, updates: object) -> None:
             source_text = str(source).strip()
             translated_text = str(translated).strip()
             if source_text and translated_text:
-                glossary[source_text] = translated_text
+                if source_text in glossary and glossary[source_text] != translated_text:
+                    conflicts = memory.setdefault('glossary_conflicts', [])
+                    entry = {'source':source_text,'previous':glossary[source_text], 'suggested':translated_text}
+                    if entry not in conflicts:
+                        conflicts.append(entry)
+                    del conflicts[:-80]
+                else:
+                    glossary[source_text] = translated_text
         if len(glossary) > 120:
             for key in list(glossary)[:-120]:
                 glossary.pop(key, None)
@@ -644,6 +726,21 @@ async def _translate_gemini_batch(
             "ẩn dụ và độc thoại có còn đúng với source không. Trả items đủ id với text cuối cùng; "
             "không sửa timestamp, không chép draft còn lỗi."
         )
+    system_prompt += (
+        "\nBÀN GIAO NGỮ CẢNH: Mỗi lượt có memory.handoff, dùng được ngay cả khi chat vừa đổi. "
+        "Ưu tiên câu nguồn hiện tại và trích đoạn gốc. Bản dịch cũ chỉ là tham khảo, không phải bằng chứng đúng nghĩa. "
+        "source_linked_notes chỉ có trích dẫn nguồn khớp, chưa chứng minh diễn giải của AI đúng. "
+        "Không biến open_questions/legacy thành sự thật; khi conflicts, đối chiếu câu trích và cảnh hiện tại, không tự chọn theo ghi nhớ cũ. "
+        "Quan hệ và xưng hô phải đúng từng cặp subject/target, chiều người nói/người nghe và cảnh. "
+        "Tên được gọi không xác định người đang nói; không tự gán người nói khi thiếu bằng chứng. "
+        "Giữ cách viết trong character_name_contract. Không coi gap là đoạn đã dịch. next_context chỉ để nối nghĩa, không áp một sự kiện tương lai lên cảnh hiện tại. scene_boundary_hints là gợi ý đổi cảnh; không mang định danh người nói/xưng hô cục bộ qua chỗ đó khi chưa có bằng chứng. "
+        "Chỉ bổ sung tối đa 3 source_notes mới vào memory_updates khi có chi tiết quan trọng được CURRENT_ITEMS xác nhận: "
+        "{kind:character|relationship|addressing|glossary|scene|uncertainty,subject,target,value,uncertain,evidence:[{id,quote}]}. "
+        "subject/target dùng tên gốc hoặc ID nhân vật cụ thể, không chỉ chức danh chung. target bắt buộc với relationship/addressing; quote chép nguyên văn nguồn ở id đó. "
+        "Nếu chưa chắc diễn giải hoặc người nói, uncertain=true; không đoán. Không có chi tiết mới thì memory_updates={}."
+    )
+    handoff_memory = build_handoff(memory, context, batch, previous_context, next_context,
+                                   build_character_name_registry(context))
     payload = {
         "source_language": source_language,
         "target_language": target_language,
@@ -656,7 +753,7 @@ async def _translate_gemini_batch(
         "character_name_contract": character_name_contract(
             build_character_name_registry(context)
         ),
-        "memory": memory,
+        "memory": handoff_memory,
         "previous_context": previous_context,
         "current_items": batch,
         "required_ids": [int(item["id"]) for item in batch],
@@ -692,33 +789,39 @@ async def _translate_gemini_batch(
         if item_id in by_id:
             duplicate_ids.add(item_id)
         text = unicodedata.normalize("NFC", str(item.get("text") or "").strip())
-        if text:
+        if text and text != NON_CAPTION:
             by_id[item_id] = text
     missing = [item_id for item_id in expected_ids if item_id not in by_id]
     unexpected = [item_id for item_id in by_id if item_id not in expected_ids]
+    invalid_language = {item_id for item_id, text in by_id.items()
+                        if target_language.lower() == 'vi' and _looks_chinese(text)}
+    invalid_addressing = {item_id for item_id, text in by_id.items()
+                          if target_language.lower() == 'vi' and not romantic_evidence
+                          and re.search(r'\b(?:chàng(?!\s+trai\b)|thiếp)\b', text, re.I)}
+    valid_items = {item_id: text for item_id, text in by_id.items()
+                   if item_id in expected_ids and item_id not in duplicate_ids
+                   and item_id not in invalid_language and item_id not in invalid_addressing}
+    updates = data.get('memory_updates') if isinstance(data.get('memory_updates'), dict) else {}
+    if 'source_notes' in updates:
+        updates = dict(updates, source_notes=source_notes(updates, batch, set(valid_items)))
     if missing or unexpected or duplicate_ids or len(items) != len(batch):
         raise TranslationBatchStructureError(
             "AI trả sai cấu trúc batch "
             f"(thiếu={missing}, thừa={unexpected}, trùng={sorted(duplicate_ids)}).",
-            valid_items={item_id: text for item_id, text in by_id.items()
-                         if item_id in expected_ids and item_id not in duplicate_ids
-                         and not (target_language.lower() == 'vi' and _looks_chinese(text))},
-            updates=data.get('memory_updates') if isinstance(data.get('memory_updates'), dict) else {},
+            valid_items=valid_items, updates=updates,
         )
     translated = [by_id[item_id] for item_id in expected_ids]
-    if target_language.lower() == 'vi' and not romantic_evidence:
-        invalid = [item_id for item_id in expected_ids
-                   if re.search(r'\b(?:chàng(?!\s+trai\b)|thiếp)\b', by_id[item_id], re.I)]
-        if invalid:
-            raise TranslationBatchStructureError(
-                f'AI dùng xưng hô tình cảm chưa có bằng chứng nguồn ở ID {invalid}; dùng ta/ngươi theo ADDRESSING_CONTRACT.',
-                valid_items={item_id: text for item_id, text in by_id.items() if item_id not in invalid},
-                updates=data.get('memory_updates') if isinstance(data.get('memory_updates'), dict) else {},
-            )
-    if target_language.lower() == "vi" and any(_looks_chinese(text) for text in translated):
-        raise TranslationError("AI còn để sót chữ Trung trong batch dịch.")
-    updates = data.get("memory_updates")
-    return translated, updates if isinstance(updates, dict) else {}
+    if invalid_addressing:
+        raise TranslationBatchStructureError(
+            f'AI dùng xưng hô tình cảm chưa có bằng chứng nguồn ở ID {sorted(invalid_addressing)}; dùng ta/ngươi theo ADDRESSING_CONTRACT.',
+            valid_items=valid_items, updates=updates,
+        )
+    if invalid_language:
+        raise TranslationBatchStructureError(
+            f'AI còn để sót chữ Trung ở ID {sorted(invalid_language)}; chỉ dịch lại các câu lỗi.',
+            valid_items=valid_items, updates=updates, source_repair_ids=invalid_language,
+        )
+    return translated, updates
 
 
 async def _translate_gemini_batch_with_retries(
@@ -735,11 +838,39 @@ async def _translate_gemini_batch_with_retries(
     review_mode: bool = False,
     fast_mode: bool = False,
     refusal_rephrased: bool = False,
+    recovery_store=None,
+    timeout_split=True,
+    source_repair_attempted: set[int] | None = None,
 ) -> tuple[list[str], dict]:
+    if source_repair_attempted is None:
+        source_repair_attempted = set()
+    if recovery_store is not None:
+        known, memories = recovery_store.load(batch)
+        if known:
+            updates = {}
+            next_memory = copy.deepcopy(memory)
+            for saved in memories:
+                _merge_translation_memory(updates, saved)
+                _merge_translation_memory(next_memory, saved)
+            record_context(batch, known, updates, context=context)
+            pending = [item for item in batch if int(item['id']) not in known]
+            if pending:
+                texts, new_updates = await _translate_gemini_batch_with_retries(
+                    client,pending,source_language,target_language,context,next_memory,previous_context,next_context,
+                    retries=retries,request_timeout_seconds=request_timeout_seconds,review_mode=review_mode,
+                    fast_mode=fast_mode,refusal_rephrased=refusal_rephrased,recovery_store=recovery_store,timeout_split=timeout_split,source_repair_attempted=source_repair_attempted)
+                known.update({int(item['id']):text for item,text in zip(pending,texts)})
+                _merge_translation_memory(updates,new_updates)
+            return [known[int(item['id'])] for item in batch], updates
     last_error: Exception | None = None
     for attempt in range(1, retries + 1):
         try:
-            return await asyncio.wait_for(
+            if is_web_engine():
+                from app.services.ai.gemini_web import response_wait_limits
+                outer_timeout = response_wait_limits(request_timeout_seconds)[1] + 120
+            else:
+                outer_timeout = request_timeout_seconds + 5
+            result = await asyncio.wait_for(
                 _translate_gemini_batch(
                     client,
                     batch,
@@ -754,9 +885,41 @@ async def _translate_gemini_batch_with_retries(
                     fast_mode=fast_mode,
                     refusal_rephrased=refusal_rephrased,
                 ),
-                timeout=request_timeout_seconds + 5,
+                timeout=outer_timeout,
             )
+            record_context(batch, {int(item['id']):text for item,text in zip(batch,result[0])}, result[1], context=context)
+            if recovery_store is not None:
+                recovery_store.save(batch, {int(item['id']):text for item,text in zip(batch,result[0])}, result[1])
+            return result
         except TranslationBatchStructureError as exc:
+            record_context(batch, exc.valid_items, exc.updates, context=context)
+            if recovery_store is not None:
+                recovery_store.save(batch,exc.valid_items,exc.updates)
+            # Untranslated CJK can indicate unreadable OCR. Consult source
+            # evidence once per cue before repeating the same text request.
+            repairable = [item for item in batch if int(item['id']) in exc.source_repair_ids
+                          and int(item['id']) not in source_repair_attempted]
+            if repairable and target_language == 'vi':
+                from app.services.ai.caption_repair import repair_failed_cues, repair_source
+                if repair_source.get():
+                    source_repair_attempted.update(int(item['id']) for item in repairable)
+                    try:
+                        repaired, changed = await repair_failed_cues(
+                            repairable, context=context, memory=memory,
+                            previous=previous_context, following=next_context,
+                            timeout=request_timeout_seconds)
+                    except (GeminiWebVerificationRequired, GeminiWebModelError, PersistenceError):
+                        raise
+                    except Exception as repair_error:
+                        print(f'Selective source repair failed: {repair_error}')
+                    else:
+                        exc.valid_items.update(repaired)
+                        _merge_translation_memory(exc.updates, changed)
+                        record_context(batch, repaired, changed, context=context)
+                        if recovery_store is not None:
+                            recovery_store.save(batch, repaired, changed)
+                        if len(exc.valid_items) == len(batch):
+                            return [exc.valid_items[int(item['id'])] for item in batch], exc.updates
             if len(batch) > 1:
                 # Keep validated translations and retry only missing/invalid
                 # IDs. If none were usable, halve the request down to one cue.
@@ -782,6 +945,9 @@ async def _translate_gemini_batch_with_retries(
                         review_mode=review_mode,
                         fast_mode=fast_mode,
                         refusal_rephrased=refusal_rephrased,
+                        recovery_store=recovery_store,
+                        timeout_split=timeout_split,
+                        source_repair_attempted=source_repair_attempted,
                     )
                     recovered.update({int(item['id']): text for item, text in zip(chunk, chunk_texts)})
                     _merge_translation_memory(combined_updates, chunk_updates)
@@ -797,8 +963,24 @@ async def _translate_gemini_batch_with_retries(
                 previous_context, next_context, retries=retries,
                 request_timeout_seconds=request_timeout_seconds,
                 review_mode=review_mode, fast_mode=fast_mode, refusal_rephrased=True,
+                recovery_store=recovery_store,
+                timeout_split=timeout_split,
+                source_repair_attempted=source_repair_attempted,
             )
-        except (GeminiWebVerificationRequired, GeminiWebTimeout):
+        except GeminiWebTimeout:
+            if len(batch)<=1 or not timeout_split:
+                raise
+            output=[]; updates={}; next_memory=copy.deepcopy(memory)
+            middle=len(batch)//2
+            for chunk in (batch[:middle],batch[middle:]):
+                texts,changed=await _translate_gemini_batch_with_retries(
+                    client,chunk,source_language,target_language,context,next_memory,previous_context,next_context,
+                    retries=retries,request_timeout_seconds=request_timeout_seconds,review_mode=review_mode,
+                    fast_mode=fast_mode,refusal_rephrased=refusal_rephrased,recovery_store=recovery_store,timeout_split=False,source_repair_attempted=source_repair_attempted)
+                output.extend(texts)
+                _merge_translation_memory(updates,changed);_merge_translation_memory(next_memory,changed)
+            return output,updates
+        except (GeminiWebVerificationRequired, GeminiWebModelError, PersistenceError):
             raise
         except TimeoutError as exc:
             last_error = TranslationError(
@@ -812,7 +994,7 @@ async def _translate_gemini_batch_with_retries(
     first_id = batch[0]["id"] if batch else "?"
     last_id = batch[-1]["id"] if batch else "?"
     raise TranslationError(
-        f"AI {'Gemini Web' if settings.translation_engine == 'gemini_web' else settings.ai_model} không dịch được batch {first_id}-{last_id}: {last_error}"
+        f"AI {provider_name()} không dịch được batch {first_id}-{last_id}: {last_error}"
     ) from last_error
 
 

@@ -22,6 +22,21 @@ class PipelineError(RuntimeError):
 
 
 async def process_dubbing_job(job_id: str) -> None:
+    from app.services import task_manager
+    try:
+        async with task_manager.job_slot():
+            await _process_dubbing_job(job_id)
+    except asyncio.CancelledError:
+        shutdown = task_manager._cancel_reasons.get(job_id) == 'shutdown'
+        job_store.update(job_id,status=JobStatus.queued if shutdown else JobStatus.failed,
+            stage='Đang chờ tự tiếp tục sau khi mở lại' if shutdown else 'Đã hủy',
+            error=None if shutdown else 'USER_CANCELLED: Người dùng hủy tác vụ; checkpoint được giữ.')
+        raise
+    finally:
+        task_manager.unregister_task(job_id)
+
+
+async def _process_dubbing_job(job_id: str) -> None:
     try:
         job = job_store.get(job_id)
         if not job:
@@ -86,6 +101,7 @@ async def process_dubbing_job(job_id: str) -> None:
                 asr_timeout_seconds=asr_timeout_seconds,
                 processing_mode=job.request.processing_mode,
                 text_only_gemini=job.request.text_only_gemini,
+                repair_failed_captions=job.request.repair_failed_captions,
             )
             if not subtitle_file.exists() or subtitle_file.stat().st_size == 0:
                 raise PipelineError("Không tạo được phụ đề để mở trong trình biên tập.")
@@ -138,6 +154,7 @@ async def process_dubbing_job(job_id: str) -> None:
                 asr_timeout_seconds=asr_timeout_seconds,
                 processing_mode=job.request.processing_mode,
                 text_only_gemini=job.request.text_only_gemini,
+                repair_failed_captions=job.request.repair_failed_captions,
             )
             progress("Tạo giọng đọc khớp phụ đề", 70)
             narration_file = work_dir / "narration_timed.wav"
@@ -182,6 +199,7 @@ async def process_dubbing_job(job_id: str) -> None:
                 asr_timeout_seconds=asr_timeout_seconds,
                 processing_mode=job.request.processing_mode,
                 text_only_gemini=job.request.text_only_gemini,
+                repair_failed_captions=job.request.repair_failed_captions,
             )
             progress("Tạo giọng đọc khớp phụ đề", 70)
             narration_file = work_dir / "narration_timed.wav"
@@ -314,17 +332,22 @@ async def process_dubbing_job(job_id: str) -> None:
         traceback.print_exc()
         error = str(exc).strip() or f"{type(exc).__name__}: {exc!r}"
         from app.services.ai.gemini_web import GeminiWebRefusal, GeminiWebVerificationRequired
-        if isinstance(exc, GeminiWebRefusal):
-            error = ('GEMINI_REFUSAL: Gemini từ chối xử lý lượt này; không phải lỗi thời gian chờ. '
+        from app.services.ai.deepseek_web import DeepSeekRateLimit
+        from app.services.ai.provider_status import provider_name, error_prefix
+        provider, prefix = provider_name(), error_prefix()
+        if isinstance(exc, DeepSeekRateLimit):
+            # Already actionable; rate limiting does not require login or verification.
+            pass
+        elif isinstance(exc, GeminiWebRefusal):
+            error = (f'{prefix}_REFUSAL: {provider} từ chối xử lý lượt này; không phải lỗi thời gian chờ. '
                      'Đã giữ checkpoint. Bạn có thể bấm Tiếp tục từ checkpoint; '
-                     'nếu vẫn bị từ chối, mở Gemini kiểm tra hoặc chuyển sang API. Chi tiết: ' + error)
+                     f'nếu vẫn bị từ chối, mở {provider} kiểm tra hoặc chuyển sang API. Chi tiết: ' + error)
         elif isinstance(exc, GeminiWebVerificationRequired):
-            error = 'GEMINI_VERIFICATION: Mở Gemini để hoàn tất đăng nhập/xác minh rồi bấm Tiếp tục từ checkpoint. ' + error
-        job_store.update(job_id, status=JobStatus.failed, stage="Xử lý thất bại", error=error)
-    finally:
-        from app.services import task_manager
-        task_manager.unregister_task(job_id)
-
+            error = f'{prefix}_VERIFICATION: Mở {provider} để hoàn tất đăng nhập/xác minh rồi bấm Tiếp tục từ checkpoint. ' + error
+        try:
+            job_store.update(job_id, status=JobStatus.failed, stage="Xử lý thất bại", error=error)
+        except Exception as save_error:
+            job_store.emergency_failure(job_id,f'DATA_SAVE_FAILED: {error}; không ghi được trạng thái: {save_error}')
 
 async def _try_synthesize_voice(
     subtitle_file: Path,

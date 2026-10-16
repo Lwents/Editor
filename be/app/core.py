@@ -25,8 +25,10 @@ class Settings(BaseSettings):
     ]
     storage_dir: str = str(BACKEND_DIR / "storage")
     ai_engine: str = "passthrough"
+    # gemini (API), gemini_web, or deepseek_web.
     translation_engine: str = "gemini"
     gemini_web_background: bool = False
+    gemini_web_max_chat_turns: int = 24
     voice_engine: str = "disabled"
     vieneu_api_url: str = "http://127.0.0.1:20129"
     vieneu_voice_female: str = "Mai Anh"

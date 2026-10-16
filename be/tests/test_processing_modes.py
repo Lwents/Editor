@@ -133,6 +133,9 @@ class ProcessingModeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(captured["result"])
 
     async def test_translation_resumes_from_last_completed_batch(self) -> None:
+        engine = patch.object(settings, 'translation_engine', 'gemini')
+        engine.start()
+        self.addCleanup(engine.stop)
         events = [
             SubtitleEvent(float(index), float(index + 1), f"source line {index + 1}")
             for index in range(35)

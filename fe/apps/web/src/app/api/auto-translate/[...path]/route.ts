@@ -14,9 +14,10 @@ async function forward(
 				route === "api/settings/ai" ||
 				route === "api/settings/ai/browser/status" ||
 				route === "api/voices" ||
-				/^api\/jobs\/[a-zA-Z0-9_-]+(\/(subtitles(?:\/quality)?|download))?$/.test(route))) ||
+				/^api\/jobs\/[a-zA-Z0-9_-]+(\/(subtitles(?:\/quality)?|download|backup|source))?$/.test(route))) ||
 		(request.method === "POST" &&
 			(route === "api/uploads/video" ||
+				route === "api/jobs/restore" ||
 				route === "api/settings/ai" ||
 				route === "api/settings/ai/test" ||
 				route === "api/settings/ai/browser/open" ||
@@ -43,7 +44,7 @@ async function forward(
 
 	try {
 		const headers = new Headers();
-		for (const key of ["content-type", "range"]) {
+		for (const key of ["content-type", "range", "content-length"]) {
 			const value = request.headers.get(key);
 			if (value) headers.set(key, value);
 		}
@@ -60,11 +61,17 @@ async function forward(
 		const destination = new URL(
 			`${(process.env.RVP_BACKEND_URL || "http://127.0.0.1:8100").replace(/\/$/, "")}/${route}`,
 		);
+        if (route === "api/settings/ai/browser/open" || route === "api/settings/ai/browser/status") {
+            const engine = new URL(request.url).searchParams.get("engine");
+            if (engine === "gemini_web" || engine === "deepseek_web") destination.searchParams.set("engine", engine);
+        }
 		if (request.method === "GET" && route.endsWith("/subtitles")) {
 			const language = new URL(request.url).searchParams.get("language");
 			if (language !== null) destination.searchParams.set("language", language);
 		}
 		if (request.method === "POST" && route.endsWith("/retry")) {
+			const repair = new URL(request.url).searchParams.get("repair_failed_captions");
+            if (repair === "true" || repair === "false") destination.searchParams.set("repair_failed_captions", repair);
 			const textOnly = new URL(request.url).searchParams.get("text_only_gemini");
 			if (textOnly === "true" || textOnly === "false")
 				destination.searchParams.set("text_only_gemini", textOnly);

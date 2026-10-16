@@ -29,6 +29,7 @@ import type { TextElement } from "@/timeline";
 
 const API = "/api/auto-translate/api";
 type Job = {
+	request?: { editor_subtitles_only?: boolean };
 	job_id: string;
 	status: string;
 	progress: number;
@@ -43,6 +44,8 @@ type RecognitionReport = {
 	assessed: boolean;
 	engine?: string;
 	review_count: number;
+	translation_audit?: { warnings: { id: number; time: number; reason: string }[] };
+	unresolved?: { items: { id: number; start: number; source: string; error: string }[] };
 	cues: { start: number; end: number; needs_review: boolean; review_reasons: string[] }[];
 };
 type Binding = {
@@ -89,7 +92,9 @@ export function TranslationView() {
 	const [error, setError] = useState("");
 	const [voice, setVoice] = useState(false);
 	const [processingMode, setProcessingMode] = useState<"fast" | "balanced" | "quality">("balanced");
+	const backupInput = useRef<HTMLInputElement>(null);
 	const [verifyImages, setVerifyImages] = useState(false);
+    const [repairFailedCaptions, setRepairFailedCaptions] = useState(true);
 	const [keepMusic, setKeepMusic] = useState(false);
 	const [voiceCatalog, setVoiceCatalog] = useState<VoiceCatalog | null>(null);
 	const [voiceEngine, setVoiceEngine] = useState("vieneu");
@@ -254,8 +259,8 @@ export function TranslationView() {
 				setError(
 					next.status === "failed" ? next.error || "Dịch thất bại." : "",
 				);
-				if (!["completed", "failed", "cancelled"].includes(next.status))
-					timer = setTimeout(poll, 2500);
+				if (next.status !== "completed")
+					timer = setTimeout(poll, ["failed", "cancelled"].includes(next.status) ? 10000 : 2500);
 			} catch (e) {
 				if (!stopped) {
 					setError(e instanceof Error ? e.message : "Mất kết nối.");
@@ -349,16 +354,16 @@ export function TranslationView() {
 		}
 	}
 
-	async function addVideo(file: File) {
+	async function addVideo(file: File, insertIfEmpty = true, useStoredFile = false) {
 		const [asset] = await processMediaAssets({ files: [file] });
 		if (!asset || asset.type !== "video")
 			throw new Error("Video không được trình duyệt hỗ trợ.");
-		const saved = await editor.media.addMediaAsset({ projectId, asset });
+		const saved = await editor.media.addMediaAsset({ projectId, asset, useStoredFile });
 		if (!saved) throw new Error("Không đủ dung lượng để lưu video.");
 		setSelectedMedia(saved.id);
 		const current = editor.scenes.getActiveScene();
 		if (
-			!current.tracks.main.elements.length &&
+			insertIfEmpty && !current.tracks.main.elements.length &&
 			!current.tracks.overlay.length &&
 			!current.tracks.audio.length
 		) {
@@ -375,11 +380,14 @@ export function TranslationView() {
 		}
 		return saved;
 	}
-	async function resumeTranslation(textOnly = false) {
+	async function resumeTranslation(textOnly = false, repairOcr?: boolean) {
 		if (!binding?.jobId || busy || running) return;
 		setBusy(true);
 		try {
-			await api(`/jobs/${binding.jobId}/retry${textOnly ? "?text_only_gemini=true" : ""}`, { method: "POST" });
+			const query = new URLSearchParams();
+            if (textOnly) query.set("text_only_gemini", "true");
+            if (repairOcr !== undefined) query.set("repair_failed_captions", String(repairOcr));
+            await api(`/jobs/${binding.jobId}/retry${query.size ? `?${query}` : ""}`, { method: "POST" });
 			setJob(await api<Job>(`/jobs/${binding.jobId}`));
 			setError("");
 		} catch (e) {
@@ -422,6 +430,7 @@ export function TranslationView() {
 					video_speed: 1,
 					processing_mode: processingMode,
 					text_only_gemini: !verifyImages,
+                    repair_failed_captions: repairFailedCaptions,
 					bgm_mode: voice && keepMusic ? "demucs" : "none",
 					use_demucs: voice && keepMusic,
 					logo_enabled: false,
@@ -448,6 +457,45 @@ export function TranslationView() {
 		} catch (e) {
 			setError(e instanceof Error ? e.message : "Không thể bắt đầu dịch.");
 		} finally {
+			setBusy(false);
+			setStage("");
+		}
+	}
+	async function restoreBackup(file: File) {
+		if (locked) return;
+		setBusy(true);
+		setError("");
+		setStage("Đang kiểm tra và khôi phục bản sao lưu…");
+		let scratch: FileSystemDirectoryHandle | null = null;
+		let scratchName = "";
+		try {
+			const form = new FormData();
+			form.append("file", file);
+			const created = await api<Job>("/jobs/restore", { method: "POST", body: form });
+			const sceneId = await editor.scenes.createScene({ name: "Khôi phục bản dịch", isMain: false });
+			await editor.scenes.switchToScene({ sceneId });
+			setBinding({ jobId: created.job_id, sceneId, name: "Bản dịch khôi phục", voice: created.request?.editor_subtitles_only === false });
+			setJob(created);
+			setPollRevision((revision) => revision + 1);
+			const response = await fetch(`${API}/jobs/${created.job_id}/source`);
+			if (!response.ok) throw new Error("Tác vụ đã khôi phục nhưng chưa nạp được video nguồn.");
+			const extension = response.headers.get("content-disposition")?.match(/source\.(mp4|mkv|mov|webm|avi|m4v)/i)?.[1]?.toLowerCase() || "mp4";
+			let videoFile: File;
+			if (navigator.storage?.getDirectory && response.body) {
+				scratch = await navigator.storage.getDirectory();
+				scratchName = `lwent-restore-${created.job_id}.${extension}`;
+				const handle = await scratch.getFileHandle(scratchName, { create: true });
+				await response.body.pipeTo(await handle.createWritable());
+				videoFile = await handle.getFile();
+			} else {
+				videoFile = new File([await response.blob()], `Khôi phục-${created.job_id}.${extension}`, { type: response.headers.get("content-type") || "video/mp4" });
+			}
+			const asset = await addVideo(videoFile, false, true);
+			editor.timeline.insertElement({ element: buildElementFromMedia({ mediaId: asset.id, mediaType: "video", name: asset.name, duration: mediaTimeFromSeconds({ seconds: asset.duration || 0 }), startTime: ZERO_MEDIA_TIME }), placement: { mode: "auto" } });
+		} catch (e) {
+			setError(e instanceof Error ? e.message : "Không khôi phục được bản sao lưu.");
+		} finally {
+			if (scratch && scratchName) await scratch.removeEntry(scratchName).catch(() => {});
 			setBusy(false);
 			setStage("");
 		}
@@ -824,6 +872,8 @@ export function TranslationView() {
 			>
 				＋ Chọn video từ máy
 			</Button>
+			<input ref={backupInput} type="file" accept=".zip" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; if (file) void restoreBackup(file); }} />
+			<Button className="w-full" variant="outline" disabled={locked} onClick={() => backupInput.current?.click()}>Khôi phục từ bản sao lưu</Button>
 			<label className="block text-xs space-y-2">
 				Video cần dịch
 				<select
@@ -847,23 +897,28 @@ export function TranslationView() {
 			<label className="block text-xs space-y-2">
 				Cách dịch
 				<select className="w-full bg-background rounded-md border p-2 text-sm" value={processingMode} disabled={locked} onChange={(e) => setProcessingMode(e.target.value as "fast" | "balanced" | "quality")}>
-					<option value="fast">Dịch nhanh</option>
-					<option value="balanced">Cân bằng</option>
-					<option value="quality">Dịch sâu</option>
+					<option value="fast">Dịch nhanh · Tư duy Thấp</option>
+					<option value="balanced">Cân bằng · Tư duy Trung bình</option>
+					<option value="quality">Dịch sâu · Tư duy Cao</option>
 				</select>
 				<p className="text-muted-foreground">
-					{processingMode === "fast" ? "Đọc chữ trên máy và dịch; bỏ lượt đối chiếu bản dịch cuối, có thể còn lỗi nghĩa hoặc xưng hô." : processingMode === "quality" ? "Nhóm câu nhỏ hơn và đối chiếu bản dịch cuối; xử lý lâu hơn, không bảo đảm mọi câu đều đúng." : "Đọc chữ trên máy, dịch và đối chiếu bản dịch cuối."}
+					{processingMode === "fast" ? "Tối đa 24 câu/lượt, bỏ lượt rà soát cuối. Gemini: Flash tư duy Thấp. DeepSeek: tắt DeepThink." : processingMode === "quality" ? "Tối đa 8 câu/lượt, thêm rà soát nghĩa, tên và xưng hô. Gemini: Flash tư duy Cao. DeepSeek: bật DeepThink." : "Tối đa 12 câu/lượt, thêm rà soát bản dịch. Gemini: Flash tư duy Trung bình. DeepSeek: bật DeepThink."}
+					{" Chọn dịch vụ trong Cấu hình AI. Với API, dùng model đã cấu hình."}
 				</p>
 			</label>
 			<label className="block text-xs space-y-2">
 				<span className="flex items-start gap-2">
 					<input type="checkbox" checked={verifyImages} disabled={locked} onChange={(e) => setVerifyImages(e.target.checked)} />
-					Đối chiếu thêm ảnh bằng Gemini
+					Đối chiếu thêm ảnh bằng AI
 				</span>
 				<p className="text-muted-foreground">
-					{verifyImages ? "Gemini đọc thêm ảnh để kiểm tra OCR; có thể chờ lâu hoặc từ chối. Khi lỗi, có thể tiếp tục bằng OCR + Gemini văn bản." : "Gemini nhận văn bản OCR để dịch. Những đoạn chưa đối chiếu ảnh sẽ được đánh dấu cần kiểm tra; không coi OCR là luôn chính xác."}
+					{verifyImages ? "AI đọc thêm ảnh để kiểm tra OCR; có thể chờ lâu hoặc từ chối. Khi lỗi, có thể tiếp tục bằng OCR + AI văn bản." : "AI nhận văn bản OCR để dịch. Những đoạn chưa đối chiếu ảnh sẽ được đánh dấu cần kiểm tra; không coi OCR là luôn chính xác."}
 				</p>
 			</label>
+            <label className="block space-y-2 text-xs">
+                <span className="flex items-start gap-2"><input type="checkbox" checked={repairFailedCaptions} disabled={locked} onChange={e => setRepairFailedCaptions(e.target.checked)} />Tự sửa câu OCR lỗi bằng ảnh</span>
+                <p className="text-muted-foreground">Chỉ khi dịch lại bằng văn bản vẫn lỗi, gửi ảnh tại câu đó cho AI đối chiếu; giữ các câu đã dịch đúng.</p>
+            </label>
 			<label className="flex items-start gap-2 text-xs leading-relaxed">
 				<input
 					aria-label="Sub ngắn, mỗi đoạn 1 dòng"
@@ -983,7 +1038,7 @@ export function TranslationView() {
 						? "Tách giọng gốc và giữ nhạc nền. Nếu không tách được, chỉ dùng giọng tiếng Việt. Sub giữ riêng để sửa."
 						: "Chỉ dùng giọng tiếng Việt, tắt âm thanh gốc. Sub giữ riêng để sửa."
 					: "Giữ âm thanh gốc."}{" "}
-				AI dùng cấu hình 9router của backend. Mỗi lần dịch tạo một cảnh riêng để
+				AI dùng cấu hình dịch đã chọn. Mỗi lần dịch tạo một cảnh riêng để
 				bạn tiếp tục cắt và sửa video.
 			</p>
 			{(busy || job) && (
@@ -1037,6 +1092,17 @@ export function TranslationView() {
 					)}
 				</div>
 			)}
+			{binding?.jobId && <Button className="w-full" variant="outline" disabled={busy} onClick={() => window.open(`${API}/jobs/${binding.jobId}/backup`, "_blank", "noopener,noreferrer")}>Tải sao lưu video nguồn và tiến độ</Button>}
+			{recognition?.unresolved?.items?.length ? <div className="rounded-lg border border-amber-400 p-3 text-xs space-y-2"><p>{recognition.unresolved.items.length} câu chưa dịch được; các câu khác được giữ. Chưa coi bản dịch là hoàn tất.</p>{recognition.unresolved.items.map((item) => <button key={item.id} type="button" className="block text-left underline" onClick={() => editor.playback.seek({ time: mediaTimeFromSeconds({ seconds: item.start }) })}>{item.start.toFixed(2)}s · {item.source}</button>)}</div> : null}
+			{recognition?.translation_audit?.warnings?.length ? (
+				<details className="rounded-lg border p-3 text-xs">
+					<summary>{recognition.translation_audit.warnings.length} điểm cần xem lại trong bản dịch</summary>
+					<p className="my-2 text-muted-foreground">Đây là kiểm tra cấu trúc và khả năng đọc, không phải điểm chính xác về nghĩa.</p>
+					{recognition.translation_audit.warnings.map((item, index) => (
+						<button key={`${item.id}-${index}`} type="button" className="block text-left underline my-1" onClick={() => editor.playback.seek({ time: mediaTimeFromSeconds({ seconds: item.time }) })}>{item.time.toFixed(2)}s · {item.reason}</button>
+					))}
+				</details>
+			) : null}
 			{job?.status === "failed" && binding?.voice && !binding.trackId && (
 				<Button
 					variant="outline"
@@ -1056,15 +1122,21 @@ export function TranslationView() {
 					{job?.status === "failed" && binding?.jobId && (
 						<>
 							<p className="mt-2 text-xs text-muted-foreground">
-								Tiếp tục cùng tác vụ để dùng lại dữ liệu đã xử lý và các batch đã lưu. Batch chưa hoàn tất sẽ được gửi lại cho Gemini.
+								Tiếp tục cùng tác vụ để dùng lại dữ liệu đã xử lý và các batch đã lưu. Batch chưa hoàn tất sẽ được gửi lại cho dịch vụ AI đã chọn.
 							</p>
 							<Button className="mt-2" variant="outline" size="sm" disabled={busy} onClick={() => void resumeTranslation()}>
 								{busy ? "Đang tiếp tục…" : "Tiếp tục từ checkpoint"}
 							</Button>
-							{error.includes("Gemini") && (
+							{(error.includes("chữ Trung") || error.includes("CIRCUIT_OPEN") || error.includes("NEEDS_REVIEW")) && (
+                                <div className="mt-3 space-y-2">
+                                    <p className="text-xs text-muted-foreground">Đọc ảnh video tại các câu dịch lỗi để sửa OCR, giữ các câu đã lưu. Chỉ gửi ảnh của những câu cần phục hồi tới dịch vụ AI đã chọn.</p>
+                                    <Button variant="outline" size="sm" disabled={busy} onClick={() => void resumeTranslation(false, true)}>Sửa OCR bằng ảnh và tiếp tục</Button>
+                                </div>
+                            )}
+                            {(error.includes("Gemini") || error.includes("DeepSeek")) && (
 								<div className="mt-3 space-y-2">
-									<p className="text-xs text-muted-foreground">Nếu Gemini bị kẹt khi đọc ảnh: dùng chữ OCR trên máy và các đoạn đã xác minh, chỉ gửi văn bản cho Gemini dịch/đối chiếu. Đoạn chưa kiểm tra ảnh sẽ được đánh dấu cần duyệt.</p>
-									<Button variant="outline" size="sm" disabled={busy} onClick={() => void resumeTranslation(true)}>Dịch tiếp bằng OCR + Gemini văn bản</Button>
+									<p className="text-xs text-muted-foreground">Nếu AI bị kẹt khi đọc ảnh: dùng chữ OCR trên máy và các đoạn đã xác minh, chỉ gửi văn bản cho AI dịch/đối chiếu. Đoạn chưa kiểm tra ảnh sẽ được đánh dấu cần duyệt.</p>
+									<Button variant="outline" size="sm" disabled={busy} onClick={() => void resumeTranslation(true, false)}>Dịch tiếp bằng OCR + AI văn bản</Button>
 								</div>
 							)}
 						</>

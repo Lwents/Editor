@@ -1,5 +1,6 @@
 """Read hard subtitles and their display intervals directly from video frames."""
 from __future__ import annotations
+from app.services.ai.web_provider import is_web_engine
 
 import asyncio
 from collections import Counter
@@ -57,7 +58,7 @@ def _caption_reference(work_dir: Path) -> Path | None:
     return reference
 
 
-def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=None) -> Path | None:
+def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=None, resume_key=None) -> Path | None:
     import cv2
     import numpy as np
     started = time.perf_counter()
@@ -78,9 +79,12 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
         return None
     # A strong reading on one frame may anchor a caption that weaker frames
     # miss. Image review must inspect these anchors before they can be used.
-    minimum_duration = .99 / fps if language == 'ch' and settings.translation_engine.lower() == 'gemini_web' else .08
+    minimum_duration = .99 / fps if language == 'ch' and is_web_engine() else .08
     step = max(1, round(fps / 10))
     width, height = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)), int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    from app.services.subtitles.scan_checkpoint import ScanCheckpoint
+    checkpoint = ScanCheckpoint(output.with_suffix('.scan-checkpoint.json'), resume_key, step, fps) if resume_key else None
+    restored = checkpoint.load() if checkpoint else None
     try:
         reference = _caption_reference(source.parent)
         references = reference.read_text(encoding='utf-8-sig') if reference else ''
@@ -88,7 +92,7 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
         references = ''
     try:
         report('Đang tìm vùng phụ đề trên video')
-        regions = discover_regions(capture, reader, count, width, height, references)
+        regions = restored['regions'] if restored else discover_regions(capture, reader, count, width, height, references)
     except Exception:
         capture.release()
         raise
@@ -96,9 +100,9 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
         capture.release()
         return None
 
-    frame_results = {}
-    fresh_frames = set()
-    fallback_frames = set()
+    frame_results = restored['results'] if restored else {}
+    fresh_frames = restored['fresh'] if restored else set()
+    fallback_frames = restored['fallback'] if restored else set()
     last_signature = None
     last_result = ('', 0.)
     last_ocr_frame = -count
@@ -196,7 +200,7 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
                                                 cv2.BORDER_CONSTANT, value=127)
         # Weak CJK font recognition must remain provisional until the actual
         # image is checked. API-only translation retains the stricter threshold.
-        minimum = .40 if language == 'ch' and settings.translation_engine.lower() == 'gemini_web' else .60
+        minimum = .40 if language == 'ch' and is_web_engine() else .60
         lines = timed_ocr(read_lines, reader, detector_input, minimum=minimum, caption_region=True)
         lines = [(x1, y1-padding, x2, y2-padding, text, confidence)
                  for x1, y1, x2, y2, text, confidence in lines
@@ -260,8 +264,14 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
                 last_dark_points = np.where(strokes)
         return result
 
-    samples = []
-    timestamps = []
+    samples = restored['samples'] if restored else []
+    timestamps = restored['timestamps'] if restored else []
+    start_frame = restored['start'] if restored else 0
+    # Region discovery seeks around the file. Always position explicitly,
+    # including a fresh scan, before assigning absolute frame indices.
+    capture.set(cv2.CAP_PROP_POS_FRAMES,start_frame)
+    if start_frame:
+        report(f'Tiếp tục OCR từ {start_frame/fps:.1f} giây; đọc chồng lại 2 giây để nối câu',start_frame,count)
 
     def remember_timestamp(index):
         measured = capture.get(cv2.CAP_PROP_POS_MSEC) / 1000
@@ -270,7 +280,7 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
         timestamps.append(measured)
 
     try:
-        for index in range(count):
+        for index in range(start_frame,count):
             if index % step and index != count - 1:
                 if not capture.grab():
                     break
@@ -284,10 +294,16 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
             text, confidence = read_text(frame, index)
             if index % (step * 50) == 0:
                 print(f"[Visible subtitles] Scanning {index / fps:.1f}/{count / fps:.1f}s", flush=True)
-                report(f'Đọc chữ gốc: đã quét {(index + 1) / fps:.1f}/{count / fps:.1f} giây video', index + 1, count)
+                def clock(seconds):
+                    value=int(seconds);return f'{value//3600:02d}:{value%3600//60:02d}:{value%60:02d}'
+                report(f'Đọc chữ gốc: vị trí {clock((index+1)/fps)} / {clock(count/fps)} của video', index + 1, count)
             samples.append([index, text, confidence])
+            if checkpoint and (index % max(step,round(fps*30)//step*step)==0 or index==count-1):
+                checkpoint.save(index+1,regions,timestamps,samples,frame_results,fresh_frames,fallback_frames)
         if not samples:
             return None
+        if count-len(timestamps)>max(2,round(fps*.5)):
+            raise RuntimeError(f'VIDEO_DECODE_INCOMPLETE: Chỉ đọc được {len(timestamps)/fps:.1f}/{count/fps:.1f} giây. Giữ checkpoint OCR, không xuất phụ đề thiếu đuôi video.')
         count = len(timestamps)
         timestamps.append(timestamps[-1] + 1 / fps)
         groups = []
@@ -394,10 +410,10 @@ def _extract_visible(source: Path, output: Path, on_progress=None, cancelled=Non
         capture.release()
 
 
-async def _scan_with_progress(source: Path, output: Path, on_progress, on_measurement=None) -> Path | None:
+async def _scan_with_progress(source: Path, output: Path, on_progress, on_measurement=None, resume_key=None) -> Path | None:
     updates = SimpleQueue()
     cancelled = Event()
-    worker = asyncio.create_task(asyncio.to_thread(_extract_visible, source, output, updates.put, cancelled))
+    worker = asyncio.create_task(asyncio.to_thread(_extract_visible, source, output, updates.put, cancelled, resume_key))
     stage, completed, total = 'Đang chuẩn bị nhận diện chữ trên video', 0, 0
     try:
         while True:
@@ -416,7 +432,14 @@ async def _scan_with_progress(source: Path, output: Path, on_progress, on_measur
     finally:
         cancelled.set()
         if not worker.done():
-            worker.cancel()
+            # Cancelling an asyncio.to_thread task does not stop its native
+            # worker. Keep ownership until it observes the event and releases
+            # the capture/checkpoint, so retry cannot race the previous scan.
+            try:
+                await asyncio.shield(worker)
+            except RuntimeError:
+                if not cancelled.is_set():
+                    raise
 
 
 async def visible_source_subtitles(work_dir: Path, on_progress: Callable[[str], None] | None = None, on_measurement: Callable[[float, float], None] | None = None) -> Path | None:
@@ -427,7 +450,7 @@ async def visible_source_subtitles(work_dir: Path, on_progress: Callable[[str], 
     stamp = source.stat()
     fingerprint = {'size': stamp.st_size, 'mtime_ns': stamp.st_mtime_ns,
                    'version': ALGORITHM_VERSION, 'language': recognition_language(work_dir),
-                   'uncertain_caption_review': settings.translation_engine.lower() == 'gemini_web',
+                   'uncertain_caption_review': is_web_engine(),
                    'engines': [asr_cache.package_version('rapidocr'), asr_cache.package_version('vietocr')]}
     reference = await asyncio.to_thread(_caption_reference, work_dir)
     fingerprint['reference'] = await asyncio.to_thread(asr_cache.digest, reference) if reference else ''
@@ -475,7 +498,7 @@ async def visible_source_subtitles(work_dir: Path, on_progress: Callable[[str], 
                 result = output
                 print('[Visible subtitles] Reusing verified video captions.', flush=True)
             else:
-                result = await _scan_with_progress(source, output, on_progress, on_measurement)
+                result = await _scan_with_progress(source, output, on_progress, on_measurement,resume_key=shared.name)
                 if result:
                     await asyncio.to_thread(asr_cache.save_artifacts, shared, artifacts)
         temporary = marker.with_suffix('.pending.json')

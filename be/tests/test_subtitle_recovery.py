@@ -10,6 +10,21 @@ from app.services.subtitles.recovery import recover_subtitle_timeout
 
 
 class SubtitleRecoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_missing_groups_are_recovered_automatically_once(self):
+        from app.services.ai.translation import TranslationNeedsReview
+        operation=AsyncMock(side_effect=[TranslationNeedsReview('remaining group'), 'completed'])
+        with patch('app.services.subtitles.recovery.asyncio.sleep',AsyncMock()):
+            self.assertEqual(await recover_subtitle_timeout(operation,Mock()),'completed')
+        self.assertEqual(operation.await_count,2)
+
+    async def test_unresolved_groups_do_not_retry_forever(self):
+        from app.services.ai.translation import TranslationNeedsReview
+        operation=AsyncMock(side_effect=TranslationNeedsReview('remaining group'))
+        with patch('app.services.subtitles.recovery.asyncio.sleep',AsyncMock()):
+            with self.assertRaises(TranslationNeedsReview):
+                await recover_subtitle_timeout(operation,Mock())
+        self.assertEqual(operation.await_count,2)
+
     async def test_fast_omits_final_review_and_deep_keeps_it(self):
         from app.core import settings
         from app.services.subtitles import source
@@ -58,7 +73,7 @@ class SubtitleRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_second_timeout_stops_instead_of_looping(self):
         operation = AsyncMock(side_effect=GeminiWebTimeout('120s'))
         with patch('app.services.subtitles.recovery.asyncio.sleep', AsyncMock()):
-            with self.assertRaisesRegex(GeminiWebTimeout, 'GEMINI_TIMEOUT'):
+            with self.assertRaisesRegex(GeminiWebTimeout, 'AI_TIMEOUT'):
                 await recover_subtitle_timeout(operation, Mock())
         self.assertEqual(operation.await_count, 2)
 

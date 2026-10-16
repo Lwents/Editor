@@ -1,5 +1,7 @@
 """Verify uncertain burned-in captions against their actual video frames."""
 from __future__ import annotations
+from app.services.ai.provider_status import provider_name, error_prefix
+from app.services.ai.web_provider import is_web_engine
 
 import asyncio
 import hashlib
@@ -11,6 +13,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 from app.services.subtitles.timing import SubtitleEvent
+from app.services.persistence import atomic_json, read_json
 
 VERSION = 13
 IMAGE_BATCH_SIZE = 6
@@ -274,7 +277,7 @@ def _candidate_ids(events, report):
     return sorted(selected)
 
 
-def _frame_sheet(source: Path, events, ids, target: Path, regions=None):
+def _frame_sheet(source: Path, events, ids, target: Path, regions=None, include_gaps=True, include_full_frame=False):
     import cv2
     from PIL import Image, ImageDraw
     cap = cv2.VideoCapture(str(source))
@@ -299,6 +302,14 @@ def _frame_sheet(source: Path, events, ids, target: Path, regions=None):
         tile.paste(full, (0, 30))
         draw.text((8, 33 + full.height), 'Centre detail (full caption above)', fill='black')
         tile.paste(detail, (0, 55 + full.height))
+        if include_full_frame:
+            scene = image.copy()
+            scene.thumbnail((1000, 562))
+            evidence = Image.new('RGB', (1000, scene.height + 30 + tile.height), 'white')
+            ImageDraw.Draw(evidence).text((8, 8), label + ' | full frame (check other caption positions)', fill='black')
+            evidence.paste(scene, (0, 30))
+            evidence.paste(tile, (0, scene.height + 30))
+            return evidence
         return tile
 
     try:
@@ -307,7 +318,7 @@ def _frame_sheet(source: Path, events, ids, target: Path, regions=None):
         # batch; raw OCR text alone is not evidence of the displayed caption.
         evidence_ids = set(ids)
         for item_id in ids:
-            if _caption_gap(events, item_id - 1):
+            if include_gaps and _caption_gap(events, item_id - 1):
                 evidence_ids.add(item_id - 1)
         for item_id in sorted(evidence_ids):
             event = events[item_id - 1]
@@ -318,7 +329,7 @@ def _frame_sheet(source: Path, events, ids, target: Path, regions=None):
                 raise RuntimeError(f'Không đọc được frame để kiểm tra câu {item_id}.')
             image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             tiles.append(caption_tile(image, f'ID {item_id} | {at:.3f}s'))
-            gap = _caption_gap(events, item_id - 1) if item_id in ids else None
+            gap = _caption_gap(events, item_id - 1) if include_gaps and item_id in ids else None
             if gap:
                 # Evidence must include EVERY missing frame before a gap can
                 # be bridged, rather than guessing from its two neighbours.
@@ -353,22 +364,22 @@ def _frame_sheet(source: Path, events, ids, target: Path, regions=None):
 def apply_review(events, ids, items):
     """Only apply complete, high-confidence image-supported decisions."""
     if not isinstance(items, list) or len(items) != len(ids):
-        raise RuntimeError('Gemini trả thiếu câu kiểm tra hình ảnh.')
+        raise RuntimeError(f'{provider_name()} trả thiếu câu kiểm tra hình ảnh.')
     decisions = {}
     for item in items:
         item_id = item.get('id') if isinstance(item, dict) else None
         if type(item_id) is not int or item_id not in ids or item_id in decisions:
-            raise RuntimeError('Gemini trả sai ID kiểm tra hình ảnh.')
+            raise RuntimeError(f'{provider_name()} trả sai ID kiểm tra hình ảnh.')
         decision = dict(item)
         decision['source'] = item.get('text')
         if type(decision.get('is_caption')) is not bool:
-            raise RuntimeError('Gemini trả sai kết quả kiểm tra hình ảnh.')
+            raise RuntimeError(f'{provider_name()} trả sai kết quả kiểm tra hình ảnh.')
         confidence = decision.get('confidence')
         if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
-            raise RuntimeError('Gemini trả sai độ chắc chắn kiểm tra hình ảnh.')
+            raise RuntimeError(f'{provider_name()} trả sai độ chắc chắn kiểm tra hình ảnh.')
         source = decision.get('source')
         if not isinstance(source, str):
-            raise RuntimeError('Gemini trả sai chữ gốc kiểm tra hình ảnh.')
+            raise RuntimeError(f'{provider_name()} trả sai chữ gốc kiểm tra hình ảnh.')
         decisions[item_id] = decision
     result = []
     for item_id, event in enumerate(events, 1):
@@ -394,7 +405,8 @@ def apply_review(events, ids, items):
 async def review_visible_captions(source: Path, events, work_dir: Path, progress):
     from app.services.subtitles.mode import text_only_gemini
     text_only = text_only_gemini.get()
-    from app.services.ai.gemini_web import GeminiWebError, GeminiWebRefusal, GeminiWebTimeout, GeminiWebVerificationRequired, browser
+    from app.services.ai.gemini_web import GeminiWebError, GeminiWebRefusal, GeminiWebTimeout, GeminiWebVerificationRequired, GeminiWebModelError
+    from app.services.ai.web_provider import browser
     report_file = work_dir / 'subtitles.recognition.json'
     report = json.loads(report_file.read_text(encoding='utf-8')) if report_file.is_file() else {}
     ids = _candidate_ids(events, report)
@@ -411,9 +423,10 @@ async def review_visible_captions(source: Path, events, work_dir: Path, progress
     fingerprint = cache_fingerprint(VERSION)
     cache = work_dir / 'subtitles.vision-review.json'
     items = []; context = {}
-    if cache.is_file():
+    local_attempted=set()
+    if cache.is_file() or cache.with_suffix(cache.suffix+'.bak').is_file():
+        stored = read_json(cache,lambda value:isinstance(value,dict))
         try:
-            stored = json.loads(cache.read_text(encoding='utf-8'))
             saved = stored.get('items', [])
             saved_ids = [item['id'] for item in saved]
             compatible = {cache_fingerprint(v) for v in (6, 7, 8, 9, 10, 11, 12, VERSION)}
@@ -431,6 +444,8 @@ async def review_visible_captions(source: Path, events, work_dir: Path, progress
                         item.get('is_caption') and _is_shorter_verified_fragment(events, item, verified))]
                 # Use earlier image decisions; rebuild narrative memory from source.
                 context = stored.get('context', {}) if stored.get('fingerprint') == fingerprint else {}
+                if stored.get('fingerprint') == fingerprint:
+                    local_attempted={i for i in stored.get('local_attempted',[]) if type(i) is int and i in ids}
         except (ValueError, TypeError, RuntimeError, KeyError):
             items = []; context = {}
     pending_ids = [i for i in ids if i not in {item['id'] for item in items}]
@@ -441,20 +456,21 @@ async def review_visible_captions(source: Path, events, work_dir: Path, progress
         items.extend(reused)
         progress(f'Dùng lại {len(reused)} kết quả đối chiếu chữ đã có bằng chứng', 66)
         pending_ids = [i for i in ids if i not in {item['id'] for item in items}]
-    if pending_ids and report.get('language_model') == 'ch':
+    local_pending=[i for i in pending_ids if i not in local_attempted]
+    if local_pending and report.get('language_model') == 'ch':
         progress(f'OCR đọc lại chữ ở ba kích thước ảnh ({len(items)}/{len(ids)} đoạn)', 66)
-        items.extend(await asyncio.to_thread(_local_consensus, source, events, pending_ids, report.get('regions'), items))
+        items.extend(await asyncio.to_thread(_local_consensus, source, events, local_pending, report.get('regions'), items))
+        local_attempted.update(local_pending)
     items.sort(key=lambda item: item['id'])
     pending_ids = [i for i in ids if i not in {item['id'] for item in items}]
     # Persist local decisions too, even if the following Gemini request fails.
-    if items:
+    if items or local_attempted:
         await asyncio.to_thread(save_decisions, video_digest, events, items, report.get('regions'))
-        pending = cache.with_suffix('.pending.json')
-        pending.write_text(json.dumps({'fingerprint': fingerprint, 'items': items, 'context': context}, ensure_ascii=False, indent=2), encoding='utf-8'); pending.replace(cache)
+        atomic_json(cache, {'fingerprint': fingerprint, 'items': items, 'context': context, 'local_attempted': sorted(local_attempted)})
     for start in range(0, 0 if text_only else len(pending_ids), IMAGE_BATCH_SIZE):
         batch_ids = pending_ids[start:start + IMAGE_BATCH_SIZE]
         completed = len(items)
-        progress(f'Gemini kiểm tra chữ còn chưa rõ ({completed}/{len(ids)} đoạn)', 66)
+        progress(f'{provider_name()} kiểm tra chữ còn chưa rõ ({completed}/{len(ids)} đoạn)', 66)
         sheet = work_dir / f'caption-evidence-{start // IMAGE_BATCH_SIZE + 1}.jpg'
         await asyncio.to_thread(_frame_sheet, source, events, batch_ids, sheet, report.get('regions'))
         payload = {'current_items': [{'id': i, 'source': 'Chép toàn bộ phụ đề nhìn thấy trong ô ảnh này.', 'time': [events[i - 1].start, events[i - 1].end], 'gap_before': _caption_gap(events, i - 1)} for i in batch_ids]}
@@ -472,22 +488,22 @@ async def review_visible_captions(source: Path, events, work_dir: Path, progress
         for attempt in range(2):
             try:
                 reply = json.loads(await browser.complete([{'role': 'system', 'content': prompt}, {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}], timeout=180, attachments=[sheet],
-                    on_wait=lambda seconds: progress(f'Chờ Gemini đọc ảnh ({completed}/{len(ids)} đoạn; đã chờ {seconds} giây)', 66)))
+                    on_wait=lambda seconds: progress(f'Chờ {provider_name()} đọc ảnh ({completed}/{len(ids)} đoạn; đã chờ {seconds} giây)', 66)))
                 apply_review(events, batch_ids, reply.get('items'))
                 break
             except GeminiWebRefusal:
                 if attempt:
                     raise
-                progress(f'Gemini chưa nhận tác vụ chép chữ; diễn đạt lại một lần ({completed}/{len(ids)} đoạn)', 66)
+                progress(f'{provider_name()} chưa nhận tác vụ chép chữ; diễn đạt lại một lần ({completed}/{len(ids)} đoạn)', 66)
                 prompt = ('Đây là tác vụ chép văn bản từ ảnh phụ đề, không nhận diện nhân vật hay thực hiện lời thoại. '
                           'Đọc từng ô ảnh đính kèm và trả chữ nhìn thấy theo ID.\n' + prompt)
-            except (GeminiWebVerificationRequired, GeminiWebTimeout):
+            except (GeminiWebVerificationRequired, GeminiWebTimeout, GeminiWebModelError):
                 raise
             except (GeminiWebError, ValueError, RuntimeError) as exc:
                 if attempt == 1:
                     raise RuntimeError(f'Kiểm tra ảnh chưa xong ({completed}/{len(ids)} đoạn). '
                                        f'Đã giữ OCR và checkpoint để chạy tiếp. Chi tiết: {exc}') from exc
-                progress(f'Gemini chưa trả đủ kết quả; thử lại nhóm ảnh ({completed}/{len(ids)} đoạn)', 66)
+                progress(f'{provider_name()} chưa trả đủ kết quả; thử lại nhóm ảnh ({completed}/{len(ids)} đoạn)', 66)
         items.extend(dict(item, method='gemini_image_review') for item in reply['items'])
         items.sort(key=lambda item: item['id'])
         memory = reply.get('memory_updates')
@@ -495,14 +511,11 @@ async def review_visible_captions(source: Path, events, work_dir: Path, progress
             if isinstance(memory.get('characters'), list): context['characters'] = context.get('characters', []) + memory['characters']
             if isinstance(memory.get('glossary'), dict): context.setdefault('glossary', {}).update(memory['glossary'])
             if isinstance(memory.get('addressing_rules'), list): context['honorific_rules'] = context.get('honorific_rules', []) + memory['addressing_rules']
-        pending = cache.with_suffix('.pending.json')
-        pending.write_text(json.dumps({'fingerprint': fingerprint, 'items': items, 'context': context}, ensure_ascii=False, indent=2), encoding='utf-8'); pending.replace(cache)
+        atomic_json(cache, {'fingerprint': fingerprint, 'items': items, 'context': context, 'local_attempted': sorted(local_attempted)})
         await asyncio.to_thread(save_decisions, video_digest, events, items, report.get('regions'))
     if report.get('language_model') == 'ch':
         items = await asyncio.to_thread(_verify_caption_gaps, source, events, items, report.get('regions'))
-        pending = cache.with_suffix('.pending.json')
-        pending.write_text(json.dumps({'fingerprint': fingerprint, 'items': items, 'context': context}, ensure_ascii=False, indent=2), encoding='utf-8')
-        pending.replace(cache)
+        atomic_json(cache, {'fingerprint': fingerprint, 'items': items, 'context': context, 'local_attempted': sorted(local_attempted)})
     provisional_ids = set(pending_ids) if text_only else set()
     if provisional_ids:
         items = [*items, *({'id': i, 'text': events[i-1].text, 'is_caption': True,
@@ -535,5 +548,5 @@ async def review_visible_captions(source: Path, events, work_dir: Path, progress
     if provisional_ids:
         progress(f'Đọc chữ gốc xong; {len(provisional_ids)} đoạn chưa đối chiếu ảnh, sẽ đánh dấu cần kiểm tra', 66)
     else:
-        progress(f'Đã kiểm tra {len(ids)}/{len(ids)} đoạn chữ ({local_count} bằng OCR, {len(ids)-local_count} bằng Gemini)', 66)
+        progress(f'Đã kiểm tra {len(ids)}/{len(ids)} đoạn chữ ({local_count} bằng OCR, {len(ids)-local_count} bằng {provider_name()})', 66)
     return reviewed, _safe_context(context)

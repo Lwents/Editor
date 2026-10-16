@@ -1,4 +1,6 @@
 from __future__ import annotations
+from app.services.ai.provider_status import provider_name, error_prefix
+from app.services.ai.web_provider import is_web_engine
 
 import asyncio
 import base64
@@ -10,6 +12,7 @@ from pathlib import Path
 from openai import AsyncOpenAI
 
 from app.core import settings
+from app.services.ai.gemini_models import current_model_key
 from app.services.subtitles.timing import SubtitleEvent
 
 CONTEXT_VERSION = 5
@@ -54,7 +57,7 @@ async def analyze_video_context(
     *,
     verified_context: dict | None = None,
 ) -> dict:
-    use_browser = settings.translation_engine.lower() == 'gemini_web'
+    use_browser = is_web_engine()
     if not events or (not use_browser and not settings.ninerouter_api_key):
         return {}
 
@@ -67,7 +70,7 @@ async def analyze_video_context(
         'events': [(e.start, e.end, e.text) for e in events],
         'verified_context': verified_context or {},
         'engine': settings.translation_engine,
-        'model': 'Gemini Web' if use_browser else settings.ai_model,
+        'model': current_model_key() if use_browser else settings.ai_model,
     }, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
     context_file = work_dir / "ai_context.json"
@@ -90,7 +93,8 @@ async def analyze_video_context(
 
     transcript = _compact_transcript(events)
     if use_browser:
-        from app.services.ai.gemini_web import GeminiWebError, GeminiWebRefusal, GeminiWebTimeout, GeminiWebVerificationRequired, browser
+        from app.services.ai.gemini_web import GeminiWebError, GeminiWebRefusal, GeminiWebTimeout, GeminiWebVerificationRequired, GeminiWebModelError
+        from app.services.ai.web_provider import browser
         sheet = work_dir / 'context-frames.jpg'
         attached = await asyncio.to_thread(_context_frame_sheet, video_file, sheet)
         payload = {'current_items': [{'id': 1, 'source': 'Tóm tắt ngữ cảnh có bằng chứng của clip này.'}],
@@ -123,7 +127,7 @@ async def analyze_video_context(
                 raw = await browser.complete(request_messages, timeout=180,
                     attachments=[sheet] if attached and not attempt else None)
                 break
-            except GeminiWebVerificationRequired:
+            except (GeminiWebVerificationRequired, GeminiWebModelError):
                 raise
             except GeminiWebRefusal:
                 # A scene image request can fail while ordinary transcript
@@ -132,14 +136,14 @@ async def analyze_video_context(
                 # images were read. Browser refusal already resets the chat.
                 if attempt:
                     raise
-                print('[Context] Gemini refused context; clarifying once using source transcript only.', flush=True)
+                print(f'[Context] {provider_name()} refused context; clarifying once using source transcript only.', flush=True)
             except GeminiWebError as exc:
                 if attempt or (isinstance(exc, GeminiWebTimeout) and not attached):
                     raise
-                print('[Context] Gemini failed; retrying from transcript and verified caption hints, keeping OCR.', flush=True)
+                print(f'[Context] {provider_name()} failed; retrying from transcript and verified caption hints, keeping OCR.', flush=True)
         data = _loads_json_object(raw)
         if not isinstance(data, dict) or not isinstance(data.get('memory_updates'), dict):
-            raise RuntimeError('Gemini chưa trả hồ sơ ngữ cảnh hợp lệ. Phụ đề nguồn đã được giữ để chạy tiếp.')
+            raise RuntimeError(f'{provider_name()} chưa trả hồ sơ ngữ cảnh hợp lệ. Phụ đề nguồn đã được giữ để chạy tiếp.')
         context = _sanitize_context(data['memory_updates'], transcript)
         if attempt and attached:
             notes = context.get('translation_notes', [])
@@ -153,7 +157,7 @@ async def analyze_video_context(
                     and items[0].get('id') == 1 and isinstance(items[0].get('text'), str)):
                 context['plot_summary'] = items[0]['text'].strip()
         if not isinstance(context.get('plot_summary'), str) or not context['plot_summary'].strip():
-            raise RuntimeError('Gemini trả thiếu ngữ cảnh cốt truyện. Phụ đề nguồn đã được giữ để chạy tiếp.')
+            raise RuntimeError(f'{provider_name()} trả thiếu ngữ cảnh cốt truyện. Phụ đề nguồn đã được giữ để chạy tiếp.')
         _save_context(context_file, context, fingerprint)
         await asyncio.to_thread(save_artifacts, shared_directory, {'context.json': context_file})
         return context

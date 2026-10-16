@@ -29,6 +29,16 @@ const ts = require(process.argv[2] || '../../../fe/apps/web/node_modules/typescr
   assert.equal((await handler.POST(request('https://foreign.example'), context)).status,403);
   assert.equal(calls.length,2);
   assert.equal((await handler.POST(request('http://localhost:5176'),{params:Promise.resolve({path:['api','jobs','job-test','delete']})})).status,404);
+  for(const operation of ['backup','source']) {
+   const url=`http://localhost:5176/api/auto-translate/api/jobs/job-test/${operation}`;
+   assert.equal((await handler.GET(new Request(url),{params:Promise.resolve({path:['api','jobs','job-test',operation]})})).status,200);
+  }
+  const binary=Buffer.from(Array.from({length:65536},(_,index)=>index%256));
+  const restore=new Request('http://localhost:5176/api/auto-translate/api/jobs/restore',{method:'POST',headers:{host:'localhost:5176',origin:'http://localhost:5176','content-type':'application/octet-stream','content-length':String(binary.length)},body:binary});
+  assert.equal((await handler.POST(restore,{params:Promise.resolve({path:['api','jobs','restore']})})).status,200);
+  assert.ok(calls.at(-1).url.endsWith('/api/jobs/restore'));
+  assert.deepEqual(Buffer.from(await new Response(calls.at(-1).options.body).arrayBuffer()),binary);
+  assert.equal(calls.at(-1).options.headers.get('content-length'),String(binary.length));
   console.log('Retry bridge: allowed POST reaches backend; foreign origins and unsupported routes rejected');
  } finally {global.fetch=originalFetch;fs.rmSync(directory,{recursive:true,force:true});}
 })().catch(error=>{console.error(error);process.exitCode=1;});

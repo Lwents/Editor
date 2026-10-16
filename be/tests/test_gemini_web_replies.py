@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from app.services.ai.gemini_web import GeminiBrowser, GeminiWebError, GeminiWebRefusal, GeminiWebTimeout, GeminiWebVerificationRequired, is_refusal
+from app.services.ai.gemini_web import GeminiBrowser, GeminiWebError, GeminiWebRefusal, GeminiWebTimeout, GeminiWebVerificationRequired, GeminiWebMalformedReply, is_refusal
 
 
 class FakePage:
@@ -14,6 +14,7 @@ class FakePage:
         self.stop_clicks = 0
         self.belongs = belongs
         self.generating_until = generating_until
+        self.visible_request = False
         self.url = 'https://gemini.google.com/app'
         self.navigations = []
         self.response = SimpleNamespace(inner_text=lambda: 'Tôi không được thiết kế để trợ giúp về điều đó.',
@@ -28,6 +29,8 @@ class FakePage:
     def locator(self, selector):
         if selector == 'model-response':
             return SimpleNamespace(count=lambda: 1, last=self.response)
+        if selector == 'user-query':
+            return SimpleNamespace(count=lambda:1,last=SimpleNamespace(evaluate=lambda script,nonce:self.visible_request))
         return SimpleNamespace(count=lambda: 1, nth=lambda index: self.stop)
 
     def goto(self, *args, **kwargs):
@@ -113,6 +116,16 @@ class GeminiReplyTests(unittest.TestCase):
             self.complete(page)
         self.assertNotIsInstance(error.exception, GeminiWebRefusal)
 
+    def test_stream_pause_without_stop_button_does_not_fail_after_three_seconds(self):
+        page = FakePage()
+        page.response.inner_text = lambda: (
+            '{"request_id":"' + page.nonce + '","items":[{"id":1,"text":"Đang'
+            if page.seconds < 10 else json.dumps({'request_id':page.nonce,'items':[{'id':1,'text':'Đã xong'}]})
+        )
+        result = self.complete(page)
+        self.assertEqual(json.loads(result)['items'][0]['text'], 'Đã xong')
+        self.assertGreaterEqual(page.seconds, 12)
+
     def test_refused_job_discards_only_its_chat_pointer_for_resume(self):
         from tempfile import TemporaryDirectory
         from pathlib import Path
@@ -143,7 +156,102 @@ class GeminiReplyTests(unittest.TestCase):
         updates = []
         with self.assertRaisesRegex(GeminiWebError, 'Quá thời gian'):
             self.complete(page, on_wait=updates.append)
-        self.assertEqual(updates, [15])
+        self.assertEqual(updates, [15, 30])
+
+    def test_active_stream_can_finish_after_the_old_absolute_timeout(self):
+        page = FakePage(generating_until=100)
+        def response():
+            if page.seconds >= 60:
+                return json.dumps({'request_id':page.nonce,'items':[{'id':1,'text':'Đã hoàn tất'}]})
+            return '{"request_id":"'+page.nonce+'","items":[{"id":1,"text":"'+('chữ ' * (1+int(page.seconds//10)))
+        page.response.inner_text = response
+        result = self.complete(page)
+        self.assertEqual(json.loads(result)['items'][0]['text'],'Đã hoàn tất')
+        self.assertGreater(page.seconds,30)
+        self.assertLess(page.seconds,90)
+
+    def test_changing_old_response_does_not_extend_current_wait(self):
+        page = FakePage(belongs=False,generating_until=1000)
+        page.response.inner_text = lambda:'old reply '+str(page.seconds)
+        with self.assertRaises(GeminiWebTimeout):
+            self.complete(page)
+        self.assertEqual(page.seconds,30)
+
+    def test_neverending_current_stream_has_a_hard_limit(self):
+        page = FakePage(generating_until=1000)
+        page.response.inner_text = lambda:'{"request_id":"'+page.nonce+'","items":[{"id":1,"text":"'+str(page.seconds)
+        with self.assertRaises(GeminiWebTimeout):
+            self.complete(page)
+        self.assertEqual(page.seconds,90)
+
+    def test_confirmed_current_thinking_gets_one_bounded_extra_window(self):
+        page = FakePage(generating_until=1000)
+        page.response.inner_text = lambda: 'Đang suy nghĩ'
+        with self.assertRaises(GeminiWebTimeout):
+            self.complete(page)
+        self.assertEqual(page.seconds,60)
+
+    def test_submitted_query_without_generation_reconnects_same_chat_once(self):
+        page=FakePage(belongs=False)
+        page.visible_request=True
+        reloads=[]
+        def reload(**kwargs):
+            reloads.append(page.url)
+            page.belongs=True
+            page.response.inner_text=lambda:json.dumps({'request_id':page.nonce,'items':[{'id':1,'text':'Khôi phục được'}]})
+        page.reload=reload
+        result=self.complete(page)
+        self.assertEqual(json.loads(result)['items'][0]['text'],'Khôi phục được')
+        self.assertEqual(len(reloads),1)
+
+    def test_stalled_transport_reconnect_is_bounded_and_does_not_resubmit(self):
+        page=FakePage(belongs=False)
+        page.visible_request=True
+        reloads=[]
+        page.reload=lambda **kwargs:reloads.append(page.url)
+        with self.assertRaisesRegex(GeminiWebTimeout,'không bắt đầu trả lời'):
+            self.complete(page)
+        self.assertEqual(len(reloads),1)
+        self.assertEqual(page.seconds,60)
+
+    def test_idle_truncated_reply_keeps_only_complete_current_items(self):
+        page = FakePage(generating_until=1000)
+        page.response.inner_text = lambda:'{"request_id":"'+page.nonce+'","items":[{"id":1,"text":"Đã xong"},{"id":2,"text":"chưa'
+        with self.assertRaises(GeminiWebMalformedReply) as error:
+            self.complete(page)
+        self.assertEqual(error.exception.partial['items'],[{'id':1,'text':'Đã xong'}])
+
+    def test_timeout_retains_chat_address_for_late_reply_recovery(self):
+        from tempfile import TemporaryDirectory
+        from pathlib import Path
+        from app.services.ai.gemini_models import model_policy
+        page=FakePage(belongs=False,generating_until=1000)
+        original_wait=page.wait_for_timeout
+        def waiting(milliseconds):
+            original_wait(milliseconds)
+            page.url='https://gemini.google.com/app/late-reply'
+        page.wait_for_timeout=waiting
+        browser=GeminiBrowser()
+        with TemporaryDirectory() as directory, \
+                patch('app.services.ai.gemini_web.profile_directory',return_value=Path(directory)), \
+                patch('app.services.ai.gemini_web.select_model',return_value={'model':'Flash','thinking':'medium'}), \
+                patch.object(browser,'_connect',return_value=page), \
+                patch.object(browser,'_set_visible'), \
+                patch.object(browser,'_wait_ready',return_value=True), \
+                patch.object(browser,'_editor',return_value=page.editor), \
+                patch.object(browser,'_verification_message',return_value=None), \
+                patch.object(browser,'_conversation_urls',return_value={}), \
+                patch.object(browser,'_remember_conversation') as remember, \
+                patch.object(browser,'_forget_failed_conversation') as forget, \
+                patch('app.services.ai.gemini_web.time.monotonic',side_effect=lambda:page.seconds):
+            with self.assertRaises(GeminiWebTimeout):
+                browser._complete_unlocked([{'content':'fixture'}],30,Event(),conversation='late',policy=model_policy('balanced'))
+            saved=json.loads((Path(directory)/'request-journal/late.json').read_text(encoding='utf-8'))
+            self.assertEqual(saved['url'],'https://gemini.google.com/app/late-reply')
+            self.assertEqual(saved['status'],'sent')
+            self.assertEqual(saved['request_id'],page.nonce)
+            remember.assert_called()
+            forget.assert_not_called()
 
     def test_google_challenge_is_identified_before_translation(self):
         page = SimpleNamespace(url='https://gemini.google.com/app', locator=lambda selector:

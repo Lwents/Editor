@@ -33,7 +33,7 @@ def local_request(request: Request) -> None:
 
 
 class AiConfig(BaseModel):
-    engine: Literal['gemini', 'gemini_web'] = 'gemini'
+    engine: Literal['gemini', 'gemini_web', 'deepseek_web'] = 'gemini'
     gemini_web_background: bool = False
     api_url: str = Field(min_length=1, max_length=2048)
     model: str = Field(min_length=1, max_length=200)
@@ -74,7 +74,7 @@ def effective_key(config: AiConfig) -> str:
 
 
 def public_config() -> dict:
-    return {"api_url": settings.ninerouter_api_url, "model": settings.ai_model, "has_api_key": bool(settings.ninerouter_api_key), "engine": settings.translation_engine if settings.translation_engine == 'gemini_web' else 'gemini', "gemini_web_background": settings.gemini_web_background, "gemini_web_background_supported": os.name == 'nt'}
+    return {"api_url": settings.ninerouter_api_url, "model": settings.ai_model, "has_api_key": bool(settings.ninerouter_api_key), "engine": settings.translation_engine if settings.translation_engine in {'gemini_web', 'deepseek_web'} else 'gemini', "gemini_web_background": settings.gemini_web_background, "gemini_web_background_supported": os.name == 'nt'}
 
 
 @router.get("/settings/ai", dependencies=[Depends(local_request)])
@@ -117,23 +117,29 @@ async def save_config(config: AiConfig) -> dict:
 
 @router.post("/settings/ai/test", dependencies=[Depends(local_request)])
 async def test_config(config: AiConfig) -> dict:
-    if config.engine == 'gemini_web':
-        from app.services.ai.gemini_web import browser, GeminiWebError
+    if any(job.status in {'queued', 'processing'} for job in job_store.list()):
+        raise HTTPException(409, 'Đợi tác vụ hiện tại hoàn tất trước khi thử kết nối AI.')
+    if config.engine in {'gemini_web', 'deepseek_web'}:
+        from app.services.ai.gemini_web import GeminiWebError
+        from app.services.ai.web_provider import get_browser
         import json
+        browser = get_browser(config.engine)
+        label = 'DeepSeek' if config.engine == 'deepseek_web' else 'Gemini'
         started = time.perf_counter()
         try:
-            content = await browser.complete([{'role': 'user', 'content': json.dumps({'current_items': [{'id': 1, 'source': '你好'}], 'instruction': 'Dịch sang tiếng Việt. Trả items và memory_updates.'}, ensure_ascii=False)}], 60, background=config.gemini_web_background)
+            with browser.conversation(processing_mode='fast'):
+                content = await browser.complete([{'role': 'user', 'content': json.dumps({'current_items': [{'id': 1, 'source': '你好'}], 'instruction': 'Dịch sang tiếng Việt. Trả items và memory_updates.'}, ensure_ascii=False)}], 60, background=config.gemini_web_background)
             data = json.loads(content)
             valid = len(data.get('items', [])) == 1 and data['items'][0].get('id') == 1 and bool(str(data['items'][0].get('text', '')).strip())
-            return {'ok': valid, 'message': 'Gemini Web đã trả bản dịch thử.' if valid else 'Gemini đã trả lời nhưng định dạng bản dịch chưa đúng.', 'latency_ms': round((time.perf_counter() - started) * 1000)}
+            return {'ok': valid, 'message': f'{label} Web đã trả bản dịch thử.' if valid else f'{label} đã trả lời nhưng định dạng bản dịch chưa đúng.', 'latency_ms': round((time.perf_counter() - started) * 1000)}
         except (GeminiWebError, ImportError):
-            return {'ok': False, 'message': 'Gemini chưa sẵn sàng hoặc chưa trả đúng kết quả. Mở Gemini, kiểm tra đăng nhập và thử lại.'}
+            return {'ok': False, 'message': f'{label} chưa sẵn sàng hoặc chưa trả đúng kết quả. Mở {label}, kiểm tra đăng nhập và thử lại.'}
         finally:
             try:
                 await browser.close()
             except Exception:
                 import logging
-                logging.getLogger(__name__).exception('Could not close Gemini browser after connection test')
+                logging.getLogger(__name__).exception('Could not close %s browser after connection test', label)
     from openai import AsyncOpenAI, APIConnectionError, APITimeoutError, APIStatusError
     key = effective_key(config)
     started = time.perf_counter()
@@ -155,8 +161,10 @@ async def test_config(config: AiConfig) -> dict:
 
 
 @router.post('/settings/ai/browser/open', dependencies=[Depends(local_request)])
-async def open_browser() -> dict:
-    from app.services.ai.gemini_web import browser, GeminiWebError
+async def open_browser(engine: Literal['gemini_web', 'deepseek_web'] = 'gemini_web') -> dict:
+    from app.services.ai.gemini_web import GeminiWebError
+    from app.services.ai.web_provider import get_browser
+    browser = get_browser(engine)
     try:
         return await browser.open()
     except (GeminiWebError, ImportError) as exc:
@@ -164,8 +172,10 @@ async def open_browser() -> dict:
 
 
 @router.get('/settings/ai/browser/status', dependencies=[Depends(local_request)])
-async def browser_status() -> dict:
-    from app.services.ai.gemini_web import browser, GeminiWebError
+async def browser_status(engine: Literal['gemini_web', 'deepseek_web'] = 'gemini_web') -> dict:
+    from app.services.ai.gemini_web import GeminiWebError
+    from app.services.ai.web_provider import get_browser
+    browser = get_browser(engine)
     try:
         return await browser.status()
     except GeminiWebError as exc:

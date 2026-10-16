@@ -8,7 +8,7 @@ import { Input } from "../ui/input";
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogBody, DialogFooter } from "../ui/dialog";
 
 const endpoint = "/api/auto-translate/api/settings/ai";
-type Config = { api_url: string; model: string; has_api_key: boolean; engine: "gemini" | "gemini_web"; gemini_web_background: boolean; gemini_web_background_supported: boolean };
+type Config = { api_url: string; model: string; has_api_key: boolean; engine: "gemini" | "gemini_web" | "deepseek_web"; gemini_web_background: boolean; gemini_web_background_supported: boolean };
 
 async function readResponse(response: Response) {
  const data = await response.json();
@@ -36,11 +36,11 @@ export function AiSettingsDialog() {
    .finally(() => {if (!controller.signal.aborted) setBusy(null);});
   return () => controller.abort();
  }, [open]);
- const canSubmit = !!config && !busy && (engine === "gemini_web" || (!!apiUrl.trim() && !!model.trim() && (!!key.trim() || (config.has_api_key && apiUrl.trim().replace(/\/$/, "") === config.api_url.replace(/\/$/, "")))));
+ const canSubmit = !!config && !busy && (engine !== "gemini" || (!!apiUrl.trim() && !!model.trim() && (!!key.trim() || (config.has_api_key && apiUrl.trim().replace(/\/$/, "") === config.api_url.replace(/\/$/, "")))));
  async function browserAction(action: "open" | "status") {
   setBusy("browser"); setResult(null);
   try {
-   const data = await readResponse(await fetch(`${endpoint}/browser/${action}`, {method: action === "open" ? "POST" : "GET", cache: "no-store"}));
+   const data = await readResponse(await fetch(`${endpoint}/browser/${action}?engine=${engine}`, {method: action === "open" ? "POST" : "GET", cache: "no-store"}));
    setResult({ok: data.ready, message: data.message});
   } catch (error) {setResult({ok: false, message: error instanceof Error ? error.message : "Không mở được Gemini."});}
   finally {setBusy(null);}
@@ -64,15 +64,15 @@ export function AiSettingsDialog() {
  return <Dialog open={open} onOpenChange={(value) => {if (!busy || busy === "load") {setOpen(value); if (!value) setKey("");}}}>
   <DialogTrigger asChild><Button variant="ghost" size="icon" className="size-8" title="Cấu hình AI" aria-label="Cấu hình AI"><Settings2 className="size-4" /></Button></DialogTrigger>
   <DialogContent className="max-h-[90dvh] overflow-y-auto">
-   <DialogHeader><DialogTitle>Cấu hình AI</DialogTitle><DialogDescription>Chọn cách dịch phụ đề qua API hoặc phiên chat Gemini.</DialogDescription></DialogHeader>
+   <DialogHeader><DialogTitle>Cấu hình AI</DialogTitle><DialogDescription>Chọn cách dịch phụ đề qua API hoặc phiên chat Gemini / DeepSeek.</DialogDescription></DialogHeader>
    <DialogBody>
     {busy === "load" ? <p className="flex items-center gap-2 text-sm"><Loader2 className="size-4 animate-spin" />Đang đọc cấu hình…</p> : config && <>
-     <label className="space-y-2 text-sm"><span>Cách dịch</span><select className="w-full rounded-lg border bg-background px-3 py-2" value={engine} disabled={!!busy} onChange={(e) => {setEngine(e.target.value as Config["engine"]); setResult(null);}}><option value="gemini">API / 9Router</option><option value="gemini_web">Gemini Web (tự động)</option></select></label>
-     {engine === "gemini_web" ? <div className="space-y-3 rounded-lg border p-3 text-sm">
-      <p>Mở Gemini, đăng nhập Google và chọn model trong cửa sổ đó. Sau khi lưu, app tự gửi phụ đề và nhận bản dịch; không cần API key.</p>
-      <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={!!busy} onClick={() => browserAction("open")}>Mở Gemini / đăng nhập</Button><Button variant="outline" disabled={!!busy} onClick={() => browserAction("status")}>Kiểm tra phiên</Button></div>
-      <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={background} disabled={!!busy || !config.gemini_web_background_supported} onChange={(e) => setBackground(e.target.checked)} /><span>Ẩn cửa sổ Chrome khi dịch (chạy ngầm)<span className="mt-1 block text-xs text-muted-foreground">{config.gemini_web_background_supported ? "Đăng nhập trước. Nút Mở Gemini sẽ hiện cửa sổ lại khi cần." : "Hiện hỗ trợ Windows."}</span></span></label>
-      <p className="text-xs text-muted-foreground">Phụ đề sẽ được gửi tới tài khoản Gemini của bạn. Chrome chỉ chạy trong lúc dịch, tự đóng khi hoàn tất, hủy hoặc xử lý thất bại. Phiên đăng nhập được lưu riêng trên máy này. Chế độ thử nghiệm phụ thuộc giao diện và giới hạn của Gemini.</p>
+     <label className="space-y-2 text-sm"><span>Cách dịch</span><select className="w-full rounded-lg border bg-background px-3 py-2" value={engine} disabled={!!busy} onChange={(e) => {setEngine(e.target.value as Config["engine"]); setResult(null);}}><option value="gemini">API / 9Router</option><option value="gemini_web">Gemini Web (tự động)</option><option value="deepseek_web">DeepSeek Web (tự động)</option></select></label>
+     {engine !== "gemini" ? <div className="space-y-3 rounded-lg border p-3 text-sm">
+      <p>{engine === "deepseek_web" ? "Mở DeepSeek và đăng nhập. Dịch nhanh: tắt DeepThink. Cân bằng và Dịch sâu: bật DeepThink; Dịch sâu thêm lượt rà soát. Tắt Search khi dịch; không cần API key." : "Mở Gemini và đăng nhập Google. Khi dịch, app dùng 3.8 Flash: Dịch nhanh → Thấp, Cân bằng → Trung bình, Dịch sâu → Cao; không cần API key."}</p>
+      <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={!!busy} onClick={() => browserAction("open")}>{engine === "deepseek_web" ? "Mở DeepSeek / đăng nhập" : "Mở Gemini / đăng nhập"}</Button><Button variant="outline" disabled={!!busy} onClick={() => browserAction("status")}>Kiểm tra phiên</Button></div>
+      <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={background} disabled={!!busy || !config.gemini_web_background_supported} onChange={(e) => setBackground(e.target.checked)} /><span>Ẩn cửa sổ Chrome khi dịch (chạy ngầm)<span className="mt-1 block text-xs text-muted-foreground">{config.gemini_web_background_supported ? "Đăng nhập trước. Nút Mở trình duyệt sẽ hiện cửa sổ lại khi cần." : "Hiện hỗ trợ Windows."}</span></span></label>
+      <p className="text-xs text-muted-foreground">Phụ đề sẽ được gửi tới tài khoản AI đã chọn của bạn. Chrome chỉ chạy trong lúc dịch, tự đóng khi hoàn tất, hủy hoặc xử lý thất bại. Phiên đăng nhập được lưu riêng trên máy này. Chế độ thử nghiệm phụ thuộc giao diện và giới hạn của dịch vụ AI.</p>
      </div> : <>
      <label className="space-y-2 text-sm"><span>Địa chỉ API</span><Input value={apiUrl} onChange={(e) => {setApiUrl(e.target.value); setResult(null);}} disabled={!!busy} placeholder="http://127.0.0.1:20128/v1" /><span className="block text-xs text-muted-foreground">Nhập URL API, thường kết thúc bằng /v1; không dùng địa chỉ dashboard.</span></label>
      <label className="space-y-2 text-sm"><span>API key</span><Input type="password" autoComplete="new-password" value={key} onChange={(e) => {setKey(e.target.value); setResult(null);}} disabled={!!busy} placeholder={config.has_api_key ? "Đã có key — để trống để giữ nguyên" : "Nhập API key"} /><span className="block text-xs text-muted-foreground">Key được lưu ở backend trên máy này. Key đã lưu không được gửi lại trình duyệt.</span></label>

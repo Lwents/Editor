@@ -9,6 +9,7 @@ import numpy as np
 
 from app.core import settings
 from app.services.ai.asr_cache import digest
+from app.services.ai.gemini_models import model_policy
 from app.services.ai.translation import TRANSLATION_POLICY_VERSION
 from app.services.ai.character_names import build_character_name_registry, canonicalize_character_text
 from app.services.ai.context import analyze_video_context
@@ -223,7 +224,7 @@ class VisibleCaptionTests(unittest.TestCase):
             (root / 'subtitles.recognition.json').write_text('{}')
             marker = {'policy': TRANSLATION_POLICY_VERSION, 'review_completed': True,
                       'engine': settings.translation_engine,
-                      'model': 'Gemini Web' if settings.translation_engine == 'gemini_web' else settings.ai_model,
+                      'model': model_policy('balanced').cache_key if settings.translation_engine == 'gemini_web' else settings.ai_model,
                       'video': _quality_signature(video), 'sha256': digest(target),
                       'source_sha256': digest(grouped)}
             quality = root / 'translation_quality.json'
@@ -252,7 +253,7 @@ class ContextRetryTests(unittest.IsolatedAsyncioTestCase):
         token = text_only_gemini.set(True)
         try:
             with TemporaryDirectory() as directory, \
-                    patch('app.services.subtitles.vision_review._local_consensus', return_value=[]), \
+                    patch('app.services.subtitles.vision_review._local_consensus', return_value=[]) as local_read, \
                     patch('app.services.subtitles.vision_review._verify_caption_gaps', side_effect=lambda source, events, items, regions: items), \
                     patch('app.services.ai.gemini_web.browser.complete', AsyncMock()) as complete:
                 root = Path(directory)
@@ -267,6 +268,11 @@ class ContextRetryTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(report['cues'][0]['needs_review'])
                 self.assertTrue(report['cues'][0]['image_verification_skipped'])
                 self.assertIn('chưa đối chiếu ảnh', ' '.join(context['translation_notes']))
+                # Retrying reuses the attempted read, without turning uncertainty into verification.
+                await review_visible_captions(source, [SubtitleEvent(1,2,'是')], root, lambda *args: None)
+                self.assertEqual(local_read.call_count, 1)
+                retry_report = json.loads((root/'subtitles.recognition.verified.json').read_text())
+                self.assertTrue(retry_report['cues'][0]['needs_review'])
         finally:
             text_only_gemini.reset(token)
     async def test_caption_verification_does_not_retry_captcha(self):

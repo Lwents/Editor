@@ -17,20 +17,34 @@ export class MediaManager {
 	async addMediaAsset({
 		projectId,
 		asset,
+		useStoredFile = false,
 	}: {
 		projectId: string;
 		asset: Omit<MediaAsset, "id">;
+		useStoredFile?: boolean;
 	}): Promise<MediaAsset | null> {
-		const newAsset: MediaAsset = {
+		let newAsset: MediaAsset = {
 			...asset,
 			id: generateUUID(),
 		};
 
-		this.assets = [...this.assets, newAsset];
-		this.notify();
+		if (!useStoredFile) {
+			this.assets = [...this.assets, newAsset];
+			this.notify();
+		}
 
 		try {
 			await storageService.saveMediaAsset({ projectId, mediaAsset: newAsset });
+			if (useStoredFile) {
+				// A File obtained from temporary OPFS storage becomes unreadable
+				// when that entry is removed. Publish the durable copy and its URL.
+				const stored = await storageService.loadMediaAsset({ projectId, id: newAsset.id });
+				if (!stored) throw new Error("Không đọc được video vừa lưu.");
+				if (newAsset.url) URL.revokeObjectURL(newAsset.url);
+				newAsset = stored;
+				this.assets = [...this.assets, newAsset];
+				this.notify();
+			}
 			this.editor.project.ratchetFpsForImportedMedia({
 				importedAssets: [newAsset],
 			});

@@ -490,14 +490,40 @@ async def prepare_source_video(
 ) -> Path:
     if local_file_path:
         source = Path(local_file_path)
+        destination = work_dir / f"source{source.suffix.lower()}"
         if not source.exists() or not source.is_file():
+            marker = work_dir / 'source.origin.json'
+            if marker.exists() and destination.exists():
+                origin = json.loads(marker.read_text(encoding='utf-8'))
+                if origin.get('path') == str(source.resolve()) and origin.get('size') == destination.stat().st_size:
+                    progress('Dùng bản video nguồn đã giữ trong tác vụ',15)
+                    return destination
             raise DownloadError(f"Không tìm thấy file video nội bộ: {source}")
         if source.suffix.lower() not in VIDEO_SUFFIXES:
             raise DownloadError("File nội bộ không đúng định dạng video hỗ trợ.")
 
-        destination = work_dir / f"source{source.suffix.lower()}"
+        from app.services.persistence import atomic_json, read_json
+        marker = work_dir / 'source.origin.json'
+        signature = {'path':str(source.resolve()), 'size':source.stat().st_size,'mtime_ns':source.stat().st_mtime_ns}
+        previous=read_json(marker)
+        if destination.exists() and previous == signature and destination.stat().st_size == signature['size']:
+            progress('Dùng lại video nguồn đã kiểm tra',15)
+            return destination
+        if previous and destination.exists() and source.resolve()!=destination.resolve():
+            raise DownloadError('SOURCE_CHANGED: Video đầu vào bị thay đổi sau khi bắt đầu tác vụ. Bản nguồn cũ và checkpoint được giữ; tạo tác vụ mới cho video khác.')
         progress("Copy video nguồn vào workspace", 15)
-        await asyncio.to_thread(shutil.copy2, source, destination)
+        if source.resolve() != destination.resolve():
+            temporary = destination.with_suffix(destination.suffix + '.copying')
+            if shutil.disk_usage(work_dir).free<signature['size']+256*1024**2:
+                raise DownloadError('SOURCE_DISK_FULL: Không đủ dung lượng giữ bản video nguồn; chưa thay đổi dữ liệu cũ.')
+            try:
+                await asyncio.to_thread(shutil.copy2, source, temporary)
+                if source.stat().st_size!=signature['size'] or source.stat().st_mtime_ns!=signature['mtime_ns']:
+                    raise DownloadError('SOURCE_CHANGED: Video thay đổi trong lúc sao chép; chưa công bố bản nguồn.')
+                temporary.replace(destination)
+            finally:
+                temporary.unlink(missing_ok=True)
+        atomic_json(marker,signature)
         return destination
 
     if source_url:

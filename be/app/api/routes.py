@@ -1958,7 +1958,10 @@ async def list_jobs() -> list[JobProgress]:
 
 @router.delete("/jobs", tags=["jobs"])
 async def clear_jobs() -> dict[str, str]:
+    pending = list(task_manager._tasks.values())
     cancelled = task_manager.cancel_all_tasks()
+    if pending:
+        await asyncio.gather(*pending,return_exceptions=True)
     warnings = job_store.clear()
 
     message = "Jobs and generated files were moved to the recycle bin."
@@ -2015,7 +2018,66 @@ async def get_subtitle_quality(job_id: str) -> dict:
     if not job_store.get(job_id):
         raise HTTPException(status_code=404, detail="Job not found.")
     from app.services.subtitles.quality import recognition_report
-    return recognition_report(Path(settings.storage_dir) / "jobs" / job_id)
+    work=Path(settings.storage_dir)/'jobs'/job_id
+    result=recognition_report(work)
+    for key,name in [('translation_audit','translation_audit.json'),('unresolved','translation_unresolved.json')]:
+        file=work/name
+        if file.exists():
+            try:
+                result[key]=json.loads(file.read_text(encoding='utf-8'))
+            except (OSError,ValueError):
+                result[key]={'errors':['Không đọc được báo cáo; giữ tệp để kiểm tra.']}
+    return result
+
+
+@router.get('/jobs/{job_id}/backup',tags=['jobs'])
+async def download_job_backup(job_id:str,background_tasks:BackgroundTasks):
+    import tempfile
+    from app.services.job_backup import create_backup
+    job=job_store.get(job_id)
+    if job is None:
+        raise HTTPException(404,'Không tìm thấy tác vụ.')
+    work=Path(settings.storage_dir)/'jobs'/job_id
+    descriptor,name=tempfile.mkstemp(suffix='.zip',prefix='Lwent-task-')
+    import os
+    os.close(descriptor)
+    output=Path(name)
+    try:
+        await asyncio.to_thread(create_backup,job,work,output)
+    except Exception as exc:
+        output.unlink(missing_ok=True)
+        raise HTTPException(409,str(exc)) from exc
+    background_tasks.add_task(output.unlink,missing_ok=True)
+    return FileResponse(output,media_type='application/zip',filename=f'Lwent-task-{job_id}.zip')
+
+
+@router.get('/jobs/{job_id}/source',tags=['jobs'])
+async def download_job_source(job_id:str):
+    if job_store.get(job_id) is None:
+        raise HTTPException(404,'Không tìm thấy tác vụ.')
+    work=Path(settings.storage_dir)/'jobs'/job_id
+    source=next((file for file in work.glob('source.*') if file.suffix.lower() in VIDEO_SUFFIXES),None)
+    if source is None:
+        raise HTTPException(404,'Chưa có video nguồn.')
+    return FileResponse(source,filename=source.name)
+
+
+@router.post('/jobs/restore',response_model=JobProgress,tags=['jobs'])
+async def upload_job_backup(file:UploadFile):
+    import tempfile
+    from app.services.job_backup import restore_backup
+    from app.services import task_manager
+    with tempfile.TemporaryDirectory(prefix='Lwent-restore-') as temporary:
+        archive=Path(temporary)/'backup.zip'
+        with archive.open('wb') as output:
+            while chunk:=await file.read(1024**2):
+                output.write(chunk)
+        try:
+            job=await asyncio.to_thread(restore_backup,archive,job_store,Path(settings.storage_dir))
+        except Exception as exc:
+            raise HTTPException(409,str(exc)) from exc
+    task_manager.start(job.job_id,process_job(job.job_id))
+    return job
 
 
 @router.post("/jobs/{job_id}/subtitles/realign", tags=["jobs"])
@@ -2107,6 +2169,7 @@ async def evaluate_job_output(job_id: str) -> JobProgress:
 async def retry_job(
     job_id: str,
     text_only_gemini: bool | None = None,
+    repair_failed_captions: bool | None = None,
     auto_detect_blur: bool = False,
     blur_box_y_percent: int | None = None,
     blur_box_height_percent: int | None = None,
@@ -2129,6 +2192,8 @@ async def retry_job(
     }
     if text_only_gemini is not None:
         request_updates['text_only_gemini'] = text_only_gemini
+    if repair_failed_captions is not None:
+        request_updates['repair_failed_captions'] = repair_failed_captions
     if auto_detect_blur:
         from app.services.ai.detect_regions import auto_detect_blur_regions_ai, review_and_build_blur_config
 
@@ -2174,8 +2239,7 @@ async def retry_job(
         completed_at=None,
     )
     import asyncio
-    task = asyncio.create_task(process_job(job_id))
-    task_manager.register_task(job_id, task)
+    task_manager.start(job_id, process_job(job_id))
     return JobCreateResponse(job_id=job_id, status=job.status)
 
 
